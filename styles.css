@@ -6,3 +6,270 @@
 .cloud-tts-reader-settings .setting-item-description code {
   white-space: nowrap;
 }
+
+/* 设置页分组标题 */
+.cloud-tts-reader-settings h3.cloud-tts-reader-settings-section {
+  margin-top: 24px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  font-size: var(--font-ui-small);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+}
+
+/* ==========================================
+   控制器浮窗样式
+   ========================================== */
+.cloud-tts-reader-controller {
+  position: fixed;
+  right: 24px;
+  bottom: 28px;
+  z-index: var(--layer-popover);
+  width: 340px;
+  padding: 14px 16px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 12px;
+  background: var(--background-primary);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 20%);
+  font-family: var(--font-ui);
+  transition: box-shadow 0.2s ease, opacity 0.2s ease;
+}
+
+.cloud-tts-reader-controller:hover {
+  box-shadow: 0 12px 40px rgb(0 0 0 / 25%);
+}
+
+.cloud-tts-reader-controller.is-dragging {
+  box-shadow: 0 16px 48px rgb(0 0 0 / 30%);
+  opacity: 0.95;
+}
+
+/* === 顶部区域：拖拽手柄 + 标题 + 文件名 + 关闭 === */
+.cloud-tts-reader-controller-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* 拖拽手柄 */
+.cloud-tts-reader-controller-drag {
+  padding: 4px 6px;
+  cursor: grab;
+  color: var(--text-muted);
+  font-size: 12px;
+  border-radius: 4px;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.cloud-tts-reader-controller-drag:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+.cloud-tts-reader-controller.is-dragging .cloud-tts-reader-controller-drag {
+  cursor: grabbing;
+}
+
+/* 标题 + 文件名区域 */
+.cloud-tts-reader-controller-title-area {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cloud-tts-reader-controller-title {
+  font-weight: 600;
+  font-size: var(--font-ui-medium);
+  color: var(--text-normal);
+  line-height: 1.2;
+}
+
+/* 文件名（截断显示） */
+.cloud-tts-reader-controller-filename {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+/* 关闭按钮 */
+.cloud-tts-reader-controller-close {
+  padding: 4px 8px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+.cloud-tts-reader-controller-close:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
+}
+
+/* === 进度区域 === */
+.cloud-tts-reader-controller-progress {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+/* 进度条轨道 */
+.cloud-tts-reader-controller-progress-track {
+  flex: 1;
+  height: 8px;
+  background: var(--background-modifier-border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+/* 进度条填充 */
+.cloud-tts-reader-controller-progress-fill {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--interactive-accent, #7d7d7d) 0%, #5eb5e0 100%);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+/* 进度文字 */
+.cloud-tts-reader-controller-progress-text {
+  font-size: var(--font-ui-small);
+  color: var(--text-muted);
+  min-width: 36px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* === 状态区域 === */
+.cloud-tts-reader-controller-status-area {
+  margin-bottom: 12px;
+}
+
+.cloud-tts-reader-controller-status {
+  color: var(--text-normal);
+  font-size: var(--font-ui-medium);
+  font-weight: 500;
+}
+
+/* === 播放速度区域 === */
+.cloud-tts-reader-controller-speed {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cloud-tts-reader-controller-speed-label {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  white-space: nowrap;
+}
+
+.cloud-tts-reader-controller-speed-buttons {
+  display: flex;
+  flex: 1;
+  gap: 4px;
+}
+
+.cloud-tts-reader-controller-speed-btn {
+  flex: 1;
+  min-width: 0;
+  padding: 6px 2px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: var(--font-ui-smaller);
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+}
+
+.cloud-tts-reader-controller-speed-btn:hover {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent, var(--text-muted));
+}
+
+.cloud-tts-reader-controller-speed-btn:active {
+  transform: translateY(1px);
+}
+
+.cloud-tts-reader-controller-speed-btn.is-active {
+  background: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* === 操作按钮区域 === */
+.cloud-tts-reader-controller-actions {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cloud-tts-reader-controller-actions button {
+  min-width: 0;
+  padding: 8px 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  cursor: pointer;
+  font-size: var(--font-ui-small);
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cloud-tts-reader-controller-actions button:hover:not(:disabled) {
+  background: var(--background-modifier-hover);
+  border-color: var(--interactive-accent, var(--text-muted));
+  transform: translateY(-1px);
+}
+
+.cloud-tts-reader-controller-actions button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.cloud-tts-reader-controller-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.cloud-tts-reader-controller-actions button:last-child {
+  /* 目录按钮 */
+}
+
+.cloud-tts-reader-controller-actions button:nth-child(4) {
+  /* 设置按钮 */
+  font-size: 16px;
+}
+
+/* ==========================================
+   暗色模式适配
+   ========================================== */
+.theme-dark .cloud-tts-reader-controller {
+  background: var(--background-primary);
+  box-shadow: 0 8px 32px rgb(0 0 0 / 40%);
+}
+
+.theme-dark .cloud-tts-reader-controller:hover {
+  box-shadow: 0 12px 40px rgb(0 0 0 / 50%);
+}
+
+.theme-dark .cloud-tts-reader-controller-progress-fill {
+  background: linear-gradient(90deg, #4a9edd 0%, #7dc4f0 100%);
+}

@@ -1,26 +1,44 @@
 # Cloud TTS Reader
 
-Cloud TTS Reader reads selected text or the active note aloud from inside your note editor.
+Cloud TTS Reader is an Obsidian desktop plugin that reads selected text or the active Markdown note aloud through a local TTS CLI.
 
-It is designed for people who want a practical read-aloud workflow for long notes, drafts, study material, and reference documents. The default backend is Baidu Cloud Speech Synthesis, and the plugin also keeps an OpenAI-compatible backend for services such as SiliconFlow or OpenAI-style `/audio/speech` APIs. On desktop, it can also export the current note to a local HTML page and open it in Microsoft Edge for Edge's built-in Read aloud feature.
+The plugin is intentionally local-first: Obsidian extracts and cleans Markdown text, splits long notes into manageable chunks, calls `ttsctl say <text> --output <wav> --speed <number>`, then plays the generated wav files inside Obsidian.
 
 ## Features
 
 - Read selected text first; if nothing is selected, read the active Markdown note.
-- Use Baidu Cloud short text speech synthesis by default.
-- Cache Baidu `access_token` locally after exchanging your API Key and Secret Key.
-- Split long notes into smaller chunks before synthesis.
+- Use the local `ttsctl` CLI as the speech engine.
+- Split long Markdown files into chunks before synthesis.
+- Play chunks sequentially inside Obsidian.
+- Show a floating playback controller while reading.
 - Pause, resume, and stop playback.
-- Configure speech speed, pitch, volume, audio format, Baidu speaker ID, and client ID.
-- Switch to an OpenAI-compatible speech backend when needed.
-- Open the current note in Microsoft Edge for Edge Read aloud.
-- Strip YAML frontmatter and optionally skip fenced code blocks before narration.
+- Test the configured local TTS CLI from the settings page or command palette.
+- Keep or automatically delete generated wav files.
+- Open the generated audio output folder.
+- Strip YAML frontmatter.
+- Optionally skip fenced code blocks.
+- Clean common Markdown syntax before narration, including headings, links, embeds, wikilinks, blockquotes, list markers, emphasis, and inline code.
+- Desktop-only by design, because local CLI execution requires the Obsidian desktop runtime.
+
+## Local TTS CLI Contract
+
+The configured CLI must support this command shape:
+
+```text
+ttsctl say <text> --output <wav-path> --speed <number>
+```
+
+The default path is tuned for this machine:
+
+```text
+C:\Users\18660\work_space_ai\07codex_default\local-tts-service\ttsctl.ps1
+```
+
+That `ttsctl` entrypoint uses the local `local-tts-service` repository and can synthesize offline without starting the HTTP service.
 
 ## Installation
 
-### Manual installation
-
-1. Download `main.js`, `manifest.json`, and `styles.css` from the latest GitHub release.
+1. Download `main.js`, `manifest.json`, and `styles.css` from the latest release.
 2. Create this folder in your vault:
 
 ```text
@@ -31,46 +49,38 @@ It is designed for people who want a practical read-aloud workflow for long note
 4. Restart Obsidian or reload community plugins.
 5. Enable **Cloud TTS Reader** in community plugin settings.
 
-## Baidu Cloud Setup
-
-Create a Baidu Cloud Speech application and copy its credentials into the plugin settings:
-
-- Backend: `Baidu Cloud speech synthesis`
-- Speech endpoint: `https://tsn.baidu.com/text2audio`
-- API key: your Baidu application API Key
-- Secret key: your Baidu application Secret Key
-- Speaker ID:
-  - `0`: common female voice
-  - `1`: common male voice
-  - `3`: Du Xiaoyao
-  - `4`: Du Yaya
-
-Available speakers and quotas depend on the voice libraries enabled for your Baidu Cloud account. Baidu Cloud's free testing resources are controlled by Baidu's console and policy, not by this plugin.
-
 ## Commands
 
 - `Read selected text or active note aloud`
 - `Pause reading`
 - `Resume reading`
 - `Stop reading`
-- `Open selected text or active note in Microsoft Edge`
+- `Test local TTS CLI`
+- `Open TTS output folder`
+
+## Playback Controller
+
+When reading starts, Cloud TTS Reader shows a floating controller in the lower-right corner of Obsidian.
+
+The controller shows the current synthesis/playback state and chunk progress, and provides:
+
+- `Pause`
+- `Continue`
+- `Stop`
+- `Folder`
+
+If Obsidian or Electron blocks automatic playback after local synthesis, click `Continue` in the controller.
 
 ## Settings
 
-- `TTS backend`: Baidu Cloud or OpenAI-compatible API.
-- `API key`: Baidu API Key or bearer token for compatible APIs.
-- `Secret key`: Baidu Secret Key.
-- `Speech endpoint`: Baidu or compatible TTS endpoint.
-- `Model` and `Voice`: used only by OpenAI-compatible APIs.
-- `Audio format`: `mp3`, `wav`, or `pcm` for Baidu Cloud.
-- `Speed`, `Pitch`, `Volume`: Baidu range is `0` to `15`, default `5`.
-- `Baidu speaker ID`: voice selection for Baidu Cloud.
-- `Baidu CUID`: client identifier used for quota and rate limiting.
-- `Max chunk characters`: chunk size used before calling TTS.
+- `Local TTS CLI`: path to `ttsctl.ps1`, `ttsctl.py`, `ttsctl.sh`, or another compatible executable.
+- `Output folder`: vault-relative folder for generated wav files. Default: `.cloud-tts-reader/audio`.
+- `Speed`: speech speed passed to the local CLI. Recommended range: `0.5` to `2`.
+- `Max chunk characters`: chunk size used before calling the CLI.
 - `Strip frontmatter`: skip YAML frontmatter.
 - `Skip fenced code blocks`: omit Markdown code blocks.
-- `Voice instructions`: optional style instructions for compatible APIs that support them.
-- `Edge export path`: temporary HTML path used for Microsoft Edge Read aloud.
+- `Keep generated audio files`: keep wav files after playback instead of deleting them.
+- `Open folder after synthesis`: open the output folder after a read completes.
 
 ## Development
 
@@ -83,4 +93,4 @@ The production build writes `main.js` in the repository root.
 
 ## Privacy
 
-When using Baidu Cloud or another cloud backend, the text being read is sent to that provider for synthesis. API credentials are stored in Obsidian plugin data inside your local vault. Do not commit `data.json` or any vault plugin settings file to a public repository.
+Text is sent only to the configured local CLI. The plugin does not call cloud TTS APIs, store API keys, or require network access for synthesis.

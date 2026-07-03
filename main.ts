@@ -6,84 +6,92 @@ import {
   Plugin,
   PluginSettingTab,
   Platform,
-  requestUrl,
   Setting,
+  TFile,
 } from "obsidian";
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "stopped";
-type TtsBackend = "baidu-cloud" | "openai-compatible";
 
-interface CodexTtsReaderSettings {
-  backend: TtsBackend;
-  apiKey: string;
-  secretKey: string;
-  accessToken: string;
-  accessTokenExpiresAt: number;
-  endpoint: string;
-  model: string;
-  voice: string;
-  responseFormat: string;
+interface CloudTtsReaderSettings {
+  ttsctlPath: string;
+  outputFolder: string;
   speed: number;
-  volume: number;
-  pitch: number;
-  sampleRate: number;
-  speakerId: number;
-  cuid: string;
-  instructions: string;
+  playbackSpeed: number; // 播放速度（HTMLAudio.playbackRate），独立于合成速度 speed
   maxChunkCharacters: number;
   stripFrontmatter: boolean;
   skipCodeBlocks: boolean;
-  edgeExportPath: string;
+  keepAudioFiles: boolean;
+  openFolderAfterSynthesis: boolean;
+  // 控制器美化
+  showProgressBar: boolean;
+  enableDragToMove: boolean;
+  // 文本过滤
+  customCharsToFilter: string;
+  filterHtmlTags: boolean;
+  filterExtraWhitespace: boolean;
 }
 
-const DEFAULT_SETTINGS: CodexTtsReaderSettings = {
-  backend: "baidu-cloud",
-  apiKey: "",
-  secretKey: "",
-  accessToken: "",
-  accessTokenExpiresAt: 0,
-  endpoint: "https://tsn.baidu.com/text2audio",
-  model: "",
-  voice: "",
-  responseFormat: "mp3",
-  speed: 5,
-  volume: 5,
-  pitch: 5,
-  sampleRate: 0,
-  speakerId: 0,
-  cuid: "cloud-tts-reader",
-  instructions: "",
+const DEFAULT_SETTINGS: CloudTtsReaderSettings = {
+  ttsctlPath: "C:\\Users\\18660\\work_space_ai\\07codex_default\\local-tts-service\\ttsctl.ps1",
+  outputFolder: ".cloud-tts-reader/audio",
+  speed: 1,
+  playbackSpeed: 1,
   maxChunkCharacters: 450,
   stripFrontmatter: true,
   skipCodeBlocks: false,
-  edgeExportPath: ".cloud-tts-reader/edge-read-aloud.html",
+  keepAudioFiles: false,
+  openFolderAfterSynthesis: false,
+  // 控制器美化
+  showProgressBar: true,
+  enableDragToMove: true,
+  // 文本过滤
+  customCharsToFilter: "",
+  filterHtmlTags: true,
+  filterExtraWhitespace: true,
 };
 
-const MIME_BY_FORMAT: Record<string, string> = {
-  mp3: "audio/mpeg",
-  opus: "audio/ogg",
-  aac: "audio/aac",
-  flac: "audio/flac",
-  wav: "audio/wav",
-  pcm: "audio/pcm",
-};
-
-export default class CodexTtsReaderPlugin extends Plugin {
-  settings: CodexTtsReaderSettings;
+export default class CloudTtsReaderPlugin extends Plugin {
+  settings: CloudTtsReaderSettings;
   private currentAudio: HTMLAudioElement | null = null;
   private objectUrls: string[] = [];
+  private generatedFiles: string[] = [];
   private shouldStop = false;
-  private state: PlaybackState = "idle";
   private statusBarEl: HTMLElement;
+  private controllerEl: HTMLElement | null = null;
+  private controllerStatusEl: HTMLElement | null = null;
+  private controllerTitleEl: HTMLElement | null = null;
+  private pauseButtonEl: HTMLButtonElement | null = null;
+  private resumeButtonEl: HTMLButtonElement | null = null;
+  private finishCurrentPlayback: (() => void) | null = null;
+  private activeFilePath: string | null = null; // 当前正在朗读的文件路径
+  private progressBarEl: HTMLElement | null = null; // 进度条元素
+  private progressTextEl: HTMLElement | null = null; // 进度文字元素
+  private fileNameEl: HTMLElement | null = null; // 文件名显示元素
+  private speedButtonEls: HTMLButtonElement[] = []; // 播放速度档位按钮
+  // 可选播放速度档位（独立于合成速度，仅作用于 HTMLAudio.playbackRate）
+  private static readonly PLAYBACK_SPEED_OPTIONS = [0.75, 1.0, 1.25, 1.5, 2.0];
 
   async onload() {
     await this.loadSettings();
 
     this.statusBarEl = this.addStatusBarItem();
     this.updateStatus("idle");
+    this.createController();
 
-    this.addRibbonIcon("volume-2", "Read note aloud", () => {
+    this.addRibbonIcon("volume-2", "Read note aloud or show controller", () => {
+      // 如果控制器已隐藏，先显示控制器
+      if (!this.controllerEl || this.controllerEl.style.display === "none") {
+        this.showController();
+      }
       void this.readActiveDocument();
+    });
+
+    this.addCommand({
+      id: "show-tts-controller",
+      name: "Show TTS controller",
+      callback: () => {
+        this.showController();
+      },
     });
 
     this.addCommand({
@@ -91,14 +99,6 @@ export default class CodexTtsReaderPlugin extends Plugin {
       name: "Read selected text or active note aloud",
       callback: () => {
         void this.readActiveDocument();
-      },
-    });
-
-    this.addCommand({
-      id: "open-selection-or-note-in-edge",
-      name: "Open selected text or active note in Microsoft Edge",
-      callback: () => {
-        void this.openActiveDocumentInEdge();
       },
     });
 
@@ -122,25 +122,74 @@ export default class CodexTtsReaderPlugin extends Plugin {
       callback: () => this.stopReading(),
     });
 
-    this.addSettingTab(new CodexTtsReaderSettingTab(this.app, this));
+    this.addCommand({
+      id: "test-local-tts-cli",
+      name: "Test local TTS CLI",
+      callback: () => {
+        void this.testLocalTtsCli();
+      },
+    });
+
+    this.addCommand({
+      id: "open-tts-output-folder",
+      name: "Open TTS output folder",
+      callback: () => {
+        void this.openOutputFolder();
+      },
+    });
+
+    this.addSettingTab(new CloudTtsReaderSettingTab(this.app, this));
   }
 
   onunload() {
-    this.stopReading();
+    this.stopReading(false);
+    this.unregisterFileCloseListener();
+    this.controllerEl?.remove();
+  }
+
+  // 页签关闭监听相关
+  // Obsidian 没有 file-close workspace 事件，改用 layout-change：
+  // 布局变化（含页签关闭/打开/拖动）时，检查是否仍有 markdown leaf 打开着
+  // 正在朗读的文件，若一个都不剩，说明该页签被关闭，停止播放。
+  private layoutChangeCallback: (() => void) | null = null;
+
+  private isSourceFileStillOpen(): boolean {
+    if (!this.activeFilePath) return false;
+    return this.app.workspace
+      .getLeavesOfType("markdown")
+      .some(
+        (leaf) =>
+          leaf.view instanceof MarkdownView &&
+          leaf.view.file?.path === this.activeFilePath,
+      );
+  }
+
+  private registerFileCloseListener() {
+    // 先取消之前的监听
+    this.unregisterFileCloseListener();
+
+    this.layoutChangeCallback = () => {
+      // 没在播放或已无目标文件时无需处理
+      if (!this.activeFilePath) return;
+      if (!this.isSourceFileStillOpen()) {
+        console.log("Cloud TTS Reader: source file closed, stopping playback");
+        this.stopReading(true);
+      }
+    };
+
+    this.app.workspace.on("layout-change", this.layoutChangeCallback);
+  }
+
+  private unregisterFileCloseListener() {
+    if (this.layoutChangeCallback) {
+      this.app.workspace.off("layout-change", this.layoutChangeCallback);
+      this.layoutChangeCallback = null;
+    }
   }
 
   async loadSettings() {
     const stored = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
-
-    if (!stored?.backend && this.settings.backend === "baidu-cloud") {
-      this.settings.endpoint = DEFAULT_SETTINGS.endpoint;
-      this.settings.responseFormat = DEFAULT_SETTINGS.responseFormat;
-      this.settings.speed = DEFAULT_SETTINGS.speed;
-      this.settings.volume = DEFAULT_SETTINGS.volume;
-      this.settings.pitch = DEFAULT_SETTINGS.pitch;
-      this.settings.maxChunkCharacters = DEFAULT_SETTINGS.maxChunkCharacters;
-    }
   }
 
   async saveSettings() {
@@ -148,52 +197,78 @@ export default class CodexTtsReaderPlugin extends Plugin {
   }
 
   async readActiveDocument() {
-    if (this.settings.backend === "baidu-cloud" && (!this.settings.apiKey.trim() || !this.settings.secretKey.trim())) {
-      new Notice("Cloud TTS Reader: set Baidu API Key and Secret Key in plugin settings first.");
+    if (!Platform.isDesktopApp) {
+      new Notice("Cloud TTS Reader: local TTS CLI is only supported on desktop.");
       return;
     }
 
-    if (this.settings.backend === "openai-compatible" && !this.settings.apiKey.trim()) {
-      new Notice("Cloud TTS Reader: set an API key in plugin settings first.");
+    const adapter = this.getFileSystemAdapter();
+    if (!adapter) return;
+
+    // 获取要朗读的文件路径
+    const sourceFile = this.getSelectedFile() || this.app.workspace.getActiveFile();
+    if (!sourceFile) {
+      new Notice("Cloud TTS Reader: no file selected or active.");
       return;
     }
 
-    const text = await this.getTextToRead();
-    const normalized = this.prepareText(text);
+    // 先停止上一次的播放并清理状态。
+    // 必须在设置新 activeFilePath / 注册监听器之前调用，
+    // 否则 stopReading 会把刚设置的 activeFilePath 清空、把监听器注销掉。
+    this.stopReading(false);
 
+    this.activeFilePath = sourceFile.path;
+    // 注册页签关闭监听：当该文件的页签全部关闭时自动停止播放
+    this.registerFileCloseListener();
+
+    const normalized = this.prepareText(await this.getTextToRead());
     if (!normalized.trim()) {
       new Notice("Cloud TTS Reader: no readable text found.");
       return;
     }
 
-    this.stopReading(false);
     this.shouldStop = false;
+    this.generatedFiles = [];
+    this.showController();
 
     const chunks = splitTextIntoChunks(
       normalized,
-      clampInteger(this.settings.maxChunkCharacters, 50, 4096),
+      clampInteger(this.settings.maxChunkCharacters, 80, 4000),
     );
 
-    new Notice(`Cloud TTS Reader: reading ${chunks.length} chunk(s).`);
+    new Notice(`Cloud TTS Reader: synthesizing ${chunks.length} chunk(s) with local TTS.`);
 
     try {
+      await this.ensureOutputFolder();
+
       for (let index = 0; index < chunks.length; index += 1) {
         if (this.shouldStop) break;
 
         this.updateStatus("loading", index + 1, chunks.length);
-        const audioUrl = await this.createSpeech(chunks[index]);
+        const outputPath = this.getChunkOutputPath(adapter, index + 1);
+        await synthesizeWithTtsctl({
+          ttsctlPath: this.settings.ttsctlPath,
+          text: chunks[index],
+          outputPath,
+          speed: clampNumber(this.settings.speed, 0.5, 2),
+        });
+        this.generatedFiles.push(outputPath);
 
-        if (this.shouldStop) {
-          this.revokeObjectUrl(audioUrl);
-          break;
-        }
+        if (this.shouldStop) break;
 
-        this.updateStatus("playing", index + 1, chunks.length);
-        await this.playAudioUrl(audioUrl);
+        // 播放实际开始后才更新"正在播放"状态，
+        // 确保 currentAudio 已就绪、暂停按钮可点击
+        await this.playAudioFile(outputPath, () => {
+          this.updateStatus("playing", index + 1, chunks.length);
+        });
+        this.currentAudio = null;
       }
 
       if (!this.shouldStop) {
         this.updateStatus("idle");
+        if (this.settings.openFolderAfterSynthesis) {
+          await this.openOutputFolder();
+        }
       }
     } catch (error) {
       this.updateStatus("idle");
@@ -201,44 +276,12 @@ export default class CodexTtsReaderPlugin extends Plugin {
       console.error("Cloud TTS Reader failed", error);
     } finally {
       this.currentAudio = null;
+      this.activeFilePath = null;
+      this.unregisterFileCloseListener();
+      if (!this.settings.keepAudioFiles) {
+        await removeFiles(this.generatedFiles);
+      }
       this.releaseObjectUrls();
-    }
-  }
-
-  async openActiveDocumentInEdge() {
-    if (!Platform.isDesktopApp) {
-      new Notice("Cloud TTS Reader: opening Microsoft Edge is only supported on desktop.");
-      return;
-    }
-
-    const adapter = this.app.vault.adapter;
-    if (!(adapter instanceof FileSystemAdapter)) {
-      new Notice("Cloud TTS Reader: this vault adapter cannot expose a local file path.");
-      return;
-    }
-
-    const text = this.prepareText(await this.getTextToRead());
-    if (!text.trim()) {
-      new Notice("Cloud TTS Reader: no readable text found.");
-      return;
-    }
-
-    const activeFile = this.app.workspace.getActiveFile();
-    const title = activeFile?.basename ?? "Obsidian note";
-    const vaultPath = normalizeVaultPath(this.settings.edgeExportPath);
-
-    await ensureFolder(this.app, getFolderPath(vaultPath));
-    await this.app.vault.adapter.write(vaultPath, renderReadableHtml(title, text));
-
-    const filePath = toNativePath(adapter.getBasePath(), vaultPath);
-    const fileUrl = pathToFileUrl(filePath);
-
-    try {
-      await openUrlInMicrosoftEdge(fileUrl);
-      new Notice("Cloud TTS Reader: opened in Microsoft Edge. Use Edge Read aloud to start narration.");
-    } catch (error) {
-      new Notice(`Cloud TTS Reader could not open Edge: ${getErrorMessage(error)}`);
-      console.error("Cloud TTS Reader could not open Edge", error);
     }
   }
 
@@ -246,12 +289,36 @@ export default class CodexTtsReaderPlugin extends Plugin {
     if (!this.currentAudio || this.currentAudio.paused) return;
     this.currentAudio.pause();
     this.updateStatus("paused");
+    new Notice("已暂停");
   }
 
   async resumeReading() {
-    if (!this.currentAudio || !this.currentAudio.paused) return;
-    await this.currentAudio.play();
-    this.updateStatus("playing");
+    if (!this.currentAudio) return;
+
+    // 如果 audio 已暂停，恢复播放
+    if (this.currentAudio.paused) {
+      try {
+        await this.currentAudio.play();
+        this.updateStatus("playing");
+        new Notice("继续播放");
+      } catch (error) {
+        new Notice(`无法继续播放: ${getErrorMessage(error)}`);
+      }
+      return;
+    }
+
+    // 如果 audio 没有暂停但也没在播放（被阻止的情况），尝试重新播放
+    if (this.currentAudio.readyState >= 2) {
+      try {
+        await this.currentAudio.play();
+        this.updateStatus("playing");
+        new Notice("继续播放");
+      } catch (error) {
+        new Notice(`无法继续播放: ${getErrorMessage(error)}`);
+      }
+    } else {
+      new Notice("音频还未准备好，请稍后");
+    }
   }
 
   stopReading(showNotice = true) {
@@ -263,8 +330,13 @@ export default class CodexTtsReaderPlugin extends Plugin {
       this.currentAudio.load();
       this.currentAudio = null;
     }
+    this.finishCurrentPlayback?.();
+    this.finishCurrentPlayback = null;
 
-    this.releaseObjectUrls();
+    // 清理当前文件路径和监听器
+    this.activeFilePath = null;
+    this.unregisterFileCloseListener();
+
     this.updateStatus("stopped");
 
     if (showNotice) {
@@ -272,7 +344,72 @@ export default class CodexTtsReaderPlugin extends Plugin {
     }
   }
 
+  async testLocalTtsCli() {
+    if (!Platform.isDesktopApp) {
+      new Notice("Cloud TTS Reader: local TTS CLI is only supported on desktop.");
+      return;
+    }
+
+    const adapter = this.getFileSystemAdapter();
+    if (!adapter) return;
+
+    try {
+      await this.ensureOutputFolder();
+      const outputPath = this.getNamedOutputPath(adapter, "ttsctl-test.wav");
+      await synthesizeWithTtsctl({
+        ttsctlPath: this.settings.ttsctlPath,
+        text: "Obsidian 本地朗读插件测试成功。",
+        outputPath,
+        speed: clampNumber(this.settings.speed, 0.5, 2),
+      });
+      new Notice(`Cloud TTS Reader: local TTS CLI test passed.`);
+      this.showController();
+      try {
+        await this.playAudioFile(outputPath, () => {
+          this.updateStatus("playing");
+        });
+      } finally {
+        this.currentAudio = null;
+        this.finishCurrentPlayback = null;
+        this.updateStatus("idle");
+        this.releaseObjectUrls();
+        if (!this.settings.keepAudioFiles) {
+          await removeFiles([outputPath]);
+        }
+      }
+    } catch (error) {
+      new Notice(`Cloud TTS Reader CLI test failed: ${getErrorMessage(error)}`);
+      console.error("Cloud TTS Reader CLI test failed", error);
+    }
+  }
+
+  async openOutputFolder() {
+    const adapter = this.getFileSystemAdapter();
+    if (!adapter) return;
+
+    await this.ensureOutputFolder();
+    const folderPath = toNativePath(adapter.getBasePath(), normalizeVaultPath(this.settings.outputFolder));
+    await openPath(folderPath);
+  }
+
+  private getFileSystemAdapter(): FileSystemAdapter | null {
+    const adapter = this.app.vault.adapter;
+    if (!(adapter instanceof FileSystemAdapter)) {
+      new Notice("Cloud TTS Reader: this vault adapter cannot expose local file paths.");
+      return null;
+    }
+    return adapter;
+  }
+
   private async getTextToRead(): Promise<string> {
+    // 优先获取当前选中的文件（文件列表中高亮/点击的文件）
+    const selectedFile = this.getSelectedFile();
+    if (selectedFile) {
+      const content = await this.app.vault.read(selectedFile);
+      if (content.trim()) return content;
+    }
+
+    // 其次获取活动视图中的选中文本或全部内容
     const markdownView = this.app.workspace.getActiveViewOfType(MarkdownView);
 
     if (markdownView?.editor) {
@@ -283,10 +420,34 @@ export default class CodexTtsReaderPlugin extends Plugin {
       if (editorText.trim()) return editorText;
     }
 
+    // 最后获取活动文件
     const activeFile = this.app.workspace.getActiveFile();
     if (activeFile) return await this.app.vault.read(activeFile);
 
     return "";
+  }
+
+  // 获取当前在文件列表中选中的文件
+  private getSelectedFile(): TFile | null {
+    // 尝试多种方式获取选中的文件
+    // 方式1: 从 workspace 的 leaf 中获取
+    // @ts-ignore - internal API
+    const leaves = this.app.workspace?.getLeavesOfType("markdown");
+    if (leaves && leaves.length > 0) {
+      for (const leaf of leaves) {
+        // @ts-ignore - internal API
+        const selectedFiles = leaf?.view?.selectedFiles;
+        if (selectedFiles && selectedFiles.length > 0) {
+          return selectedFiles[0];
+        }
+      }
+    }
+    // 方式2: 获取当前活跃文件
+    const activeFile = this.app.workspace.getActiveFile();
+    if (activeFile) {
+      return activeFile;
+    }
+    return null;
   }
 
   private prepareText(text: string): string {
@@ -301,204 +462,380 @@ export default class CodexTtsReaderPlugin extends Plugin {
       next = next.replace(/~~~[\s\S]*?~~~/g, "\n");
     }
 
-    return next
+    // 过滤残留 HTML 标签
+    if (this.settings.filterHtmlTags) {
+      next = next.replace(/<[^>]+>/g, "");
+    }
+
+    // 过滤多余空白（空格、制表符、超过2个连续换行）
+    if (this.settings.filterExtraWhitespace) {
+      next = next.replace(/[ \t]+/g, " ");
+      next = next.replace(/\n{3,}/g, "\n\n");
+    }
+
+    // 自定义字符过滤
+    if (this.settings.customCharsToFilter) {
+      const chars = this.settings.customCharsToFilter.split("").map(c => c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+      if (chars.length > 0) {
+        next = next.replace(new RegExp(`[${chars.join("")}]`, "g"), "");
+      }
+    }
+
+    let result = next
       .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
       .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
       .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
       .replace(/\[\[([^\]]+)\]\]/g, "$1")
       .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
       .replace(/^[ \t]*>[ \t]?/gm, "")
-      .replace(/[ \t]+/g, " ")
-      .replace(/\n{3,}/g, "\n\n")
+      .replace(/^[ \t]*[-*+][ \t]+/gm, "")
+      .replace(/^[ \t]*\d+\.[ \t]+/gm, "")
+      .replace(/\*\*([^*]+)\*\*/g, "$1")
+      .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/`([^`]+)`/g, "$1")
       .trim();
+
+    // 段落换行处添加停顿标记
+    // 将 \n\n 转换为 。\n\n（句号在换行前面，表示段落结束后的停顿）
+    result = result.replace(/\n\n+/g, "。\n\n");
+
+    return result;
   }
 
-  private async createSpeech(input: string): Promise<string> {
-    if (this.settings.backend === "baidu-cloud") {
-      return await this.createBaiduCloudSpeech(input);
-    }
-
-    return await this.createOpenAiCompatibleSpeech(input);
-  }
-
-  private async createBaiduCloudSpeech(input: string): Promise<string> {
-    const token = await this.getBaiduAccessToken();
-    const body = buildBaiduSpeechBody({
-      text: input,
-      token,
-      cuid: this.settings.cuid.trim() || DEFAULT_SETTINGS.cuid,
-      format: this.settings.responseFormat,
-      speed: clampInteger(this.settings.speed, 0, 15),
-      pitch: clampInteger(this.settings.pitch, 0, 15),
-      volume: clampInteger(this.settings.volume, 0, 15),
-      speakerId: clampInteger(this.settings.speakerId, 0, 9999),
-    });
-
-    const response = await requestUrl({
-      url: this.settings.endpoint.trim(),
-      method: "POST",
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-      },
-      body,
-    });
-
-    if (response.status < 200 || response.status >= 300) {
-      const detail = response.text || `HTTP ${response.status}`;
-      throw new Error(detail);
-    }
-
-    const contentType = getHeader(response.headers, "content-type");
-    if (contentType.includes("application/json") || response.text.trim().startsWith("{")) {
-      throw new Error(`Baidu TTS error: ${response.text}`);
-    }
-
-    const mime = this.settings.responseFormat === "wav" ? "audio/wav" : "audio/mpeg";
-    const blob = new Blob([response.arrayBuffer], { type: mime });
-    const url = URL.createObjectURL(blob);
+  private async playAudioFile(filePath: string, onPlaybackStarted?: () => void): Promise<void> {
+    const fs = require("fs") as typeof import("fs");
+    const file = await fs.promises.readFile(filePath);
+    const audio = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
+    const url = URL.createObjectURL(new Blob([audio], { type: "audio/wav" }));
     this.objectUrls.push(url);
-    return url;
+    await this.playAudioUrl(url, onPlaybackStarted);
   }
 
-  private async getBaiduAccessToken(): Promise<string> {
-    const now = Date.now();
-    if (this.settings.accessToken && this.settings.accessTokenExpiresAt > now + 60_000) {
-      return this.settings.accessToken;
-    }
-
-    const tokenUrl = new URL("https://aip.baidubce.com/oauth/2.0/token");
-    tokenUrl.searchParams.set("grant_type", "client_credentials");
-    tokenUrl.searchParams.set("client_id", this.settings.apiKey.trim());
-    tokenUrl.searchParams.set("client_secret", this.settings.secretKey.trim());
-
-    const response = await requestUrl({
-      url: tokenUrl.toString(),
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: "",
-    });
-
-    if (response.status < 200 || response.status >= 300) {
-      throw new Error(response.text || `Baidu token HTTP ${response.status}`);
-    }
-
-    const data = parseJsonResponse(response.text) as Record<string, unknown>;
-    const accessToken = typeof data.access_token === "string" ? data.access_token : "";
-    const expiresIn = typeof data.expires_in === "number" ? data.expires_in : 0;
-
-    if (!accessToken) {
-      throw new Error(`Baidu token response did not include access_token: ${response.text}`);
-    }
-
-    this.settings.accessToken = accessToken;
-    this.settings.accessTokenExpiresAt = now + Math.max(expiresIn - 300, 60) * 1000;
-    await this.saveSettings();
-
-    return accessToken;
-  }
-
-  private async createOpenAiCompatibleSpeech(input: string): Promise<string> {
-    const payload: Record<string, string | number> = {
-      model: this.settings.model.trim(),
-      voice: this.settings.voice.trim(),
-      input,
-      response_format: this.settings.responseFormat.trim(),
-      speed: clampNumber(this.settings.speed, 0.25, 4),
-    };
-
-    if (
-      this.settings.instructions.trim() &&
-      !["tts-1", "tts-1-hd"].includes(this.settings.model.trim())
-    ) {
-      payload.instructions = this.settings.instructions.trim();
-    }
-
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (this.settings.apiKey.trim()) {
-      headers.Authorization = `Bearer ${this.settings.apiKey.trim()}`;
-    }
-
-    const response = await requestUrl({
-      url: this.settings.endpoint.trim(),
-      method: "POST",
-      headers,
-      body: JSON.stringify(payload),
-    });
-
-    if (response.status < 200 || response.status >= 300) {
-      const detail = response.text || `HTTP ${response.status}`;
-      throw new Error(detail);
-    }
-
-    const mime = MIME_BY_FORMAT[this.settings.responseFormat.trim()] ?? "audio/mpeg";
-    const blob = new Blob([response.arrayBuffer], { type: mime });
-    const url = URL.createObjectURL(blob);
-    this.objectUrls.push(url);
-    return url;
-  }
-
-  private playAudioUrl(url: string): Promise<void> {
+  private playAudioUrl(url: string, onPlaybackStarted?: () => void): Promise<void> {
     return new Promise((resolve, reject) => {
       const audio = new Audio(url);
+      audio.preload = "auto";
+      // 应用播放速度（仅影响播放，不影响合成）
+      audio.playbackRate = this.settings.playbackSpeed;
       this.currentAudio = audio;
 
-      audio.onended = () => resolve();
-      audio.onerror = () => reject(new Error("Audio playback failed."));
+      audio.onended = () => {
+        this.currentAudio = null;
+        resolve();
+      };
+      audio.onerror = (e) => {
+        this.currentAudio = null;
+        reject(new Error(getAudioErrorMessage(audio)));
+      };
 
-      void audio.play().catch(reject);
+      // 尝试播放
+      const playPromise = audio.play();
+      if (playPromise) {
+        playPromise.then(() => {
+          // 播放成功，等待 onended
+          onPlaybackStarted?.();
+          this.finishCurrentPlayback = resolve;
+        }).catch((error) => {
+          // 播放被阻止或失败，保持 audio 引用有效，等待用户点继续
+          this.finishCurrentPlayback = resolve;
+          new Notice("播放被阻止，请点击「继续」按钮播放");
+          console.warn("Playback blocked, waiting for user interaction", error);
+          // 此时 audio.paused 为 true，刷新按钮：禁用暂停、启用继续
+          this.refreshControllerButtons();
+        });
+      } else {
+        // 浏览器不支持 play()
+        this.currentAudio = null;
+        reject(new Error("Audio play not supported"));
+      }
     });
   }
 
   private updateStatus(state: PlaybackState, chunk?: number, total?: number) {
-    this.state = state;
     const prefix = "TTS";
+    // 从 activeFilePath 提取文件名
+    const fileName = this.activeFilePath ? this.activeFilePath.split("/").pop() || "" : "";
 
     if (state === "loading") {
-      this.statusBarEl.setText(`${prefix}: loading ${chunk}/${total}`);
+      this.statusBarEl.setText(`${prefix}: synthesizing ${chunk}/${total}`);
+      this.updateController("正在合成", chunk, total, fileName);
       return;
     }
 
     if (state === "playing" && chunk && total) {
       this.statusBarEl.setText(`${prefix}: playing ${chunk}/${total}`);
+      this.updateController("正在播放", chunk, total, fileName);
       return;
     }
 
     if (state === "paused") {
       this.statusBarEl.setText(`${prefix}: paused`);
+      this.updateController("已暂停", chunk, total, fileName);
       return;
     }
 
     if (state === "stopped") {
       this.statusBarEl.setText(`${prefix}: stopped`);
+      this.updateController("已停止", chunk, total, fileName);
       return;
     }
 
     this.statusBarEl.setText(`${prefix}: idle`);
+    this.updateController("空闲", chunk, total, fileName);
+  }
+
+  private createController() {
+    this.controllerEl = document.body.createDiv({ cls: "cloud-tts-reader-controller" });
+    this.controllerEl.hide();
+
+    // === 顶部区域：标题 + 文件名 + 关闭按钮 ===
+    const header = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-header" });
+
+    // 拖拽手柄区域
+    const dragHandle = header.createDiv({ cls: "cloud-tts-reader-controller-drag" });
+    dragHandle.setText("☰");
+    dragHandle.setAttribute("aria-label", "拖拽移动");
+
+    // 标题 + 文件名
+    const titleArea = header.createDiv({ cls: "cloud-tts-reader-controller-title-area" });
+    this.controllerTitleEl = titleArea.createDiv({
+      cls: "cloud-tts-reader-controller-title",
+      text: "Cloud TTS Reader",
+    });
+    this.fileNameEl = titleArea.createDiv({
+      cls: "cloud-tts-reader-controller-filename",
+      text: "",
+    });
+
+    // 关闭按钮
+    const closeButton = header.createEl("button", {
+      cls: "cloud-tts-reader-controller-close",
+      attr: { "aria-label": "关闭" }
+    });
+    closeButton.setText("✕");
+    closeButton.addEventListener("click", () => this.hideController());
+
+    // === 进度区域 ===
+    const progressArea = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-progress" });
+    const progressTrack = progressArea.createDiv({ cls: "cloud-tts-reader-controller-progress-track" });
+    this.progressBarEl = progressTrack.createDiv({ cls: "cloud-tts-reader-controller-progress-fill" });
+    this.progressTextEl = progressArea.createDiv({ cls: "cloud-tts-reader-controller-progress-text" });
+
+    // === 状态区域 ===
+    const statusArea = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-status-area" });
+    this.controllerStatusEl = statusArea.createDiv({
+      cls: "cloud-tts-reader-controller-status",
+      text: "空闲",
+    });
+
+    // === 播放速度区域（仅控制 HTMLAudio.playbackRate，不影响合成）===
+    const speedArea = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-speed" });
+    speedArea.createDiv({ cls: "cloud-tts-reader-controller-speed-label", text: "播放速度" });
+    const speedButtons = speedArea.createDiv({ cls: "cloud-tts-reader-controller-speed-buttons" });
+    this.speedButtonEls = [];
+    for (const rate of CloudTtsReaderPlugin.PLAYBACK_SPEED_OPTIONS) {
+      const btn = speedButtons.createEl("button", {
+        cls: "cloud-tts-reader-controller-speed-btn",
+        text: `${rate}x`,
+        attr: { "data-rate": String(rate) },
+      });
+      btn.addEventListener("click", () => this.setPlaybackSpeed(rate));
+      this.speedButtonEls.push(btn);
+    }
+
+    // === 操作按钮区域 ===
+    const actions = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-actions" });
+    this.pauseButtonEl = actions.createEl("button", { text: "暂停" });
+    this.pauseButtonEl.addEventListener("click", () => this.pauseReading());
+
+    this.resumeButtonEl = actions.createEl("button", { text: "继续" });
+    this.resumeButtonEl.addEventListener("click", () => {
+      void this.resumeReading();
+    });
+
+    const stopButton = actions.createEl("button", { text: "停止" });
+    stopButton.addEventListener("click", () => this.stopReading());
+
+    // 设置按钮
+    const settingsButton = actions.createEl("button", { text: "⚙" });
+    settingsButton.setAttribute("aria-label", "设置");
+    settingsButton.addEventListener("click", () => {
+      // @ts-ignore - Obsidian App 类型不完整
+      const setting = (this.app as any).setting;
+      if (setting) {
+        setting.openTabById?.("cloud-tts-reader");
+      }
+    });
+
+    // 目录按钮
+    const folderButton = actions.createEl("button", { text: "📁" });
+    folderButton.setAttribute("aria-label", "打开目录");
+    folderButton.addEventListener("click", () => {
+      void this.openOutputFolder();
+    });
+
+    // === 拖拽功能 ===
+    if (this.settings.enableDragToMove) {
+      this.setupControllerDrag();
+    }
+
+    // 初始化按钮状态（速度档位高亮、暂停/继续 disabled）
+    this.refreshControllerButtons();
+  }
+
+  // 设置控制器拖拽
+  private setupControllerDrag() {
+    if (!this.controllerEl) return;
+
+    const header = this.controllerEl.querySelector(".cloud-tts-reader-controller-drag");
+    if (!header) return;
+
+    let isDragging = false;
+    let startX = 0;
+    let startY = 0;
+    let startRight = 0;
+    let startBottom = 0;
+
+    const onMouseDown = (e: MouseEvent) => {
+      e.preventDefault();
+      isDragging = true;
+      startX = e.clientX;
+      startY = e.clientY;
+
+      // 读取当前 right/bottom 位置
+      const style = window.getComputedStyle(this.controllerEl!);
+      startRight = parseInt(style.right) || 24;
+      startBottom = parseInt(style.bottom) || 28;
+
+      // 切换到 left/top 定位以便计算
+      this.controllerEl!.style.right = "auto";
+      this.controllerEl!.style.left = `${window.innerWidth - startRight - this.controllerEl!.offsetWidth}px`;
+      this.controllerEl!.style.top = `${window.innerHeight - startBottom - this.controllerEl!.offsetHeight}px`;
+      this.controllerEl!.style.bottom = "auto";
+      this.controllerEl!.classList.add("is-dragging");
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging) return;
+      const deltaX = e.clientX - startX;
+      const deltaY = e.clientY - startY;
+
+      // 新的 left/top 位置
+      const newLeft = Math.max(0, window.innerWidth - startRight - this.controllerEl!.offsetWidth + deltaX);
+      const newTop = Math.max(0, window.innerHeight - startBottom - this.controllerEl!.offsetHeight + deltaY);
+
+      this.controllerEl!.style.left = `${newLeft}px`;
+      this.controllerEl!.style.top = `${newTop}px`;
+    };
+
+    const onMouseUp = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      this.controllerEl?.classList.remove("is-dragging");
+    };
+
+    header.addEventListener("mousedown", onMouseDown);
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }
+
+  // 隐藏控制器（停止朗读并隐藏）
+  private hideController() {
+    this.stopReading(false);
+    this.controllerEl?.hide();
+  }
+
+  private showController() {
+    this.controllerEl?.show();
+  }
+
+  private updateController(label: string, chunk?: number, total?: number, fileName?: string) {
+    if (!this.controllerEl || !this.controllerStatusEl) return;
+
+    // 更新状态文字
+    this.controllerStatusEl.setText(label);
+
+    // 更新文件名
+    if (this.fileNameEl) {
+      this.fileNameEl.setText(fileName || "");
+    }
+
+    // 更新进度条
+    if (this.progressBarEl && this.progressTextEl && chunk !== undefined && total !== undefined) {
+      const percent = total > 0 ? (chunk / total) * 100 : 0;
+      this.progressBarEl.style.width = `${percent}%`;
+      this.progressTextEl.textContent = `${chunk}/${total}`;
+    } else if (this.progressBarEl && this.progressTextEl) {
+      this.progressBarEl.style.width = "0%";
+      this.progressTextEl.textContent = "";
+    }
+
+    // 更新按钮状态
+    this.refreshControllerButtons();
+  }
+
+  // 根据 currentAudio 的实际状态刷新暂停/继续按钮的 disabled 属性。
+  // 解决时序问题：updateStatus("playing") 调用时 currentAudio 可能尚未就绪，
+  // 因此在音频真正开始播放（onPlaybackStarted）或被阻止后再统一刷新。
+  private refreshControllerButtons() {
+    if (this.pauseButtonEl) {
+      this.pauseButtonEl.disabled = !this.currentAudio || this.currentAudio.paused;
+    }
+    if (this.resumeButtonEl) {
+      this.resumeButtonEl.disabled = !this.currentAudio || !this.currentAudio.paused;
+    }
+    // 同步刷新速度按钮选中态
+    this.refreshSpeedButtons();
+  }
+
+  // 切换播放速度：更新设置、作用于正在播放的音频、刷新高亮。
+  // 仅改变 HTMLAudio.playbackRate，不触发重新合成。
+  private setPlaybackSpeed(rate: number) {
+    this.settings.playbackSpeed = rate;
+    void this.saveSettings();
+    if (this.currentAudio) {
+      this.currentAudio.playbackRate = rate;
+    }
+    this.refreshSpeedButtons();
+  }
+
+  // 高亮当前选中的速度档位按钮
+  private refreshSpeedButtons() {
+    const current = this.settings.playbackSpeed;
+    for (const btn of this.speedButtonEls) {
+      const rate = Number(btn.getAttribute("data-rate"));
+      btn.toggleClass("is-active", rate === current);
+    }
   }
 
   private releaseObjectUrls() {
     for (const url of this.objectUrls) {
-      this.revokeObjectUrl(url);
+      URL.revokeObjectURL(url);
     }
     this.objectUrls = [];
   }
 
-  private revokeObjectUrl(url: string) {
-    URL.revokeObjectURL(url);
-    this.objectUrls = this.objectUrls.filter((candidate) => candidate !== url);
+  private async ensureOutputFolder() {
+    const folderPath = normalizeVaultPath(this.settings.outputFolder || DEFAULT_SETTINGS.outputFolder);
+    await ensureVaultFolder(this.app, folderPath);
+  }
+
+  private getChunkOutputPath(adapter: FileSystemAdapter, chunk: number): string {
+    const timestamp = formatTimestamp(new Date());
+    const padded = String(chunk).padStart(3, "0");
+    return this.getNamedOutputPath(adapter, `${timestamp}-chunk-${padded}.wav`);
+  }
+
+  private getNamedOutputPath(adapter: FileSystemAdapter, filename: string): string {
+    const folderPath = normalizeVaultPath(this.settings.outputFolder || DEFAULT_SETTINGS.outputFolder);
+    return toNativePath(adapter.getBasePath(), `${folderPath}/${filename}`);
   }
 }
 
-class CodexTtsReaderSettingTab extends PluginSettingTab {
-  plugin: CodexTtsReaderPlugin;
+class CloudTtsReaderSettingTab extends PluginSettingTab {
+  plugin: CloudTtsReaderPlugin;
 
-  constructor(app: App, plugin: CodexTtsReaderPlugin) {
+  constructor(app: App, plugin: CloudTtsReaderPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
@@ -508,206 +845,70 @@ class CodexTtsReaderSettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.addClass("cloud-tts-reader-settings");
 
-    containerEl.createEl("h2", { text: "Cloud TTS Reader" });
+    containerEl.createEl("h2", { text: "Cloud TTS Reader 语音朗读" });
+
+    // === TTS 服务配置 ===
+    containerEl.createEl("h3", { text: "TTS 服务", cls: "cloud-tts-reader-settings-section" });
 
     new Setting(containerEl)
-      .setName("TTS backend")
-      .setDesc("Use Baidu Cloud for the free cloud quota route, or keep OpenAI-compatible for SiliconFlow/OpenAI-style APIs.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOptions({
-            "baidu-cloud": "Baidu Cloud speech synthesis",
-            "openai-compatible": "OpenAI-compatible speech API",
-          })
-          .setValue(this.plugin.settings.backend)
-          .onChange(async (value: TtsBackend) => {
-            this.plugin.settings.backend = value;
-            if (value === "baidu-cloud") {
-              this.plugin.settings.endpoint = DEFAULT_SETTINGS.endpoint;
-              this.plugin.settings.responseFormat = "mp3";
-              this.plugin.settings.speed = 5;
-              this.plugin.settings.pitch = 5;
-              this.plugin.settings.volume = 5;
-              this.plugin.settings.maxChunkCharacters = 450;
-            }
-            await this.plugin.saveSettings();
-            this.display();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("API key")
-      .setDesc("For Baidu Cloud, use the app API Key. For OpenAI-compatible APIs, use the bearer API key.")
-      .addText((text) => {
-        text.inputEl.type = "password";
-        text
-          .setPlaceholder("Baidu API Key")
-          .setValue(this.plugin.settings.apiKey)
-          .onChange(async (value) => {
-            this.plugin.settings.apiKey = value.trim();
-            await this.plugin.saveSettings();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName("Secret key")
-      .setDesc("Required by Baidu Cloud OAuth token exchange. Leave empty for OpenAI-compatible APIs.")
-      .addText((text) => {
-        text.inputEl.type = "password";
-        text
-          .setPlaceholder("Baidu Secret Key")
-          .setValue(this.plugin.settings.secretKey)
-          .onChange(async (value) => {
-            this.plugin.settings.secretKey = value.trim();
-            this.plugin.settings.accessToken = "";
-            this.plugin.settings.accessTokenExpiresAt = 0;
-            await this.plugin.saveSettings();
-          });
-      });
-
-    new Setting(containerEl)
-      .setName("Speech endpoint")
-      .setDesc("Baidu Cloud default: https://tsn.baidu.com/text2audio")
+      .setName("TTS CLI 路径")
+      .setDesc("本地 TTS 命令行工具路径，支持 ttsctl.ps1、ttsctl.py、ttsctl.sh 等。命令格式：say <文本> --output <输出文件> --speed <语速>")
       .addText((text) =>
         text
-          .setPlaceholder(DEFAULT_SETTINGS.endpoint)
-          .setValue(this.plugin.settings.endpoint)
+          .setPlaceholder(DEFAULT_SETTINGS.ttsctlPath)
+          .setValue(this.plugin.settings.ttsctlPath)
           .onChange(async (value) => {
-            this.plugin.settings.endpoint = value.trim() || DEFAULT_SETTINGS.endpoint;
+            this.plugin.settings.ttsctlPath = value.trim() || DEFAULT_SETTINGS.ttsctlPath;
             await this.plugin.saveSettings();
           }),
       );
 
     new Setting(containerEl)
-      .setName("Model")
-      .setDesc("Only used by OpenAI-compatible APIs. Baidu Cloud short text synthesis ignores this field.")
+      .setName("语速")
+      .setDesc("语音播放速度，范围 0.5 到 2。推荐 0.8 - 1.2")
+      .addSlider((slider) =>
+        slider
+          .setLimits(0.5, 2, 0.05)
+          .setDynamicTooltip()
+          .setValue(this.plugin.settings.speed)
+          .onChange(async (value) => {
+            this.plugin.settings.speed = clampNumber(value, 0.5, 2);
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    // === 文本处理配置 ===
+    containerEl.createEl("h3", { text: "文本处理", cls: "cloud-tts-reader-settings-section" });
+
+    new Setting(containerEl)
+      .setName("输出文件夹")
+      .setDesc("生成的音频文件存放目录，相对于 vault 根目录。")
       .addText((text) =>
         text
-          .setPlaceholder(DEFAULT_SETTINGS.model)
-          .setValue(this.plugin.settings.model)
+          .setPlaceholder(DEFAULT_SETTINGS.outputFolder)
+          .setValue(this.plugin.settings.outputFolder)
           .onChange(async (value) => {
-            this.plugin.settings.model = value.trim() || DEFAULT_SETTINGS.model;
+            this.plugin.settings.outputFolder = normalizeVaultPath(value || DEFAULT_SETTINGS.outputFolder);
             await this.plugin.saveSettings();
           }),
       );
 
     new Setting(containerEl)
-      .setName("Voice")
-      .setDesc("Only used by OpenAI-compatible APIs. For Baidu Cloud, use speaker ID below.")
-      .addText((text) =>
-        text
-          .setPlaceholder(DEFAULT_SETTINGS.voice)
-          .setValue(this.plugin.settings.voice)
-          .onChange(async (value) => {
-            this.plugin.settings.voice = value.trim() || DEFAULT_SETTINGS.voice;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Audio format")
-      .setDesc("Baidu Cloud short text synthesis supports mp3, wav, and pcm. OpenAI-compatible providers may support more.")
-      .addDropdown((dropdown) =>
-        dropdown
-          .addOptions({
-            mp3: "mp3",
-            opus: "opus",
-            aac: "aac",
-            flac: "flac",
-            wav: "wav",
-            pcm: "pcm",
-          })
-          .setValue(this.plugin.settings.responseFormat)
-          .onChange(async (value) => {
-            this.plugin.settings.responseFormat = value;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Speed")
-      .setDesc("Baidu Cloud range: 0 to 15, default 5. OpenAI-compatible APIs usually use 0.25 to 4.0.")
-      .addText((text) =>
-        text
-          .setPlaceholder("5")
-          .setValue(String(this.plugin.settings.speed))
-          .onChange(async (value) => {
-            this.plugin.settings.speed =
-              this.plugin.settings.backend === "baidu-cloud"
-                ? clampInteger(Number(value), 0, 15)
-                : clampNumber(Number(value), 0.25, 4);
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Pitch")
-      .setDesc("Baidu Cloud range: 0 to 15, default 5.")
-      .addText((text) =>
-        text
-          .setPlaceholder("5")
-          .setValue(String(this.plugin.settings.pitch))
-          .onChange(async (value) => {
-            this.plugin.settings.pitch = clampInteger(Number(value), 0, 15);
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Volume")
-      .setDesc("Baidu Cloud range: 0 to 15, default 5.")
-      .addText((text) =>
-        text
-          .setPlaceholder("5")
-          .setValue(String(this.plugin.settings.volume))
-          .onChange(async (value) => {
-            this.plugin.settings.volume = clampInteger(Number(value), 0, 15);
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Baidu speaker ID")
-      .setDesc("Common values: 0 female, 1 male, 3 Du Xiaoyao, 4 Du Yaya. Available IDs depend on enabled Baidu voice libraries.")
-      .addText((text) =>
-        text
-          .setPlaceholder("0")
-          .setValue(String(this.plugin.settings.speakerId))
-          .onChange(async (value) => {
-            this.plugin.settings.speakerId = clampInteger(Number(value), 0, 9999);
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Baidu CUID")
-      .setDesc("Client identifier used by Baidu for quota and rate limiting.")
-      .addText((text) =>
-        text
-          .setPlaceholder(DEFAULT_SETTINGS.cuid)
-          .setValue(this.plugin.settings.cuid)
-          .onChange(async (value) => {
-            this.plugin.settings.cuid = value.trim() || DEFAULT_SETTINGS.cuid;
-            await this.plugin.saveSettings();
-          }),
-      );
-
-    new Setting(containerEl)
-      .setName("Max chunk characters")
-      .setDesc("Baidu short text synthesis has a much smaller practical limit than OpenAI-compatible APIs. Default: 450 characters.")
+      .setName("分段字符数")
+      .setDesc("长文档分段处理的字符数上限，推荐 300-600。")
       .addText((text) =>
         text
           .setPlaceholder("450")
           .setValue(String(this.plugin.settings.maxChunkCharacters))
           .onChange(async (value) => {
-            this.plugin.settings.maxChunkCharacters = clampInteger(Number(value), 50, 4096);
+            this.plugin.settings.maxChunkCharacters = clampInteger(Number(value), 80, 4000);
             await this.plugin.saveSettings();
           }),
       );
 
     new Setting(containerEl)
-      .setName("Strip frontmatter")
-      .setDesc("Skip YAML frontmatter before sending text to TTS.")
+      .setName("移除 YAML 前置matter")
+      .setDesc("朗读时跳过文档开头的 YAML 元数据区域。")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.stripFrontmatter)
@@ -718,8 +919,8 @@ class CodexTtsReaderSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("Skip fenced code blocks")
-      .setDesc("Useful when notes contain large code snippets that should not be narrated.")
+      .setName("跳过代码块")
+      .setDesc("不朗读文档中的代码块内容。")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.skipCodeBlocks)
@@ -729,29 +930,92 @@ class CodexTtsReaderSettingTab extends PluginSettingTab {
           }),
       );
 
+    // === 文本过滤配置 ===
+    containerEl.createEl("h3", { text: "文本过滤", cls: "cloud-tts-reader-settings-section" });
+
     new Setting(containerEl)
-      .setName("Voice instructions")
-      .setDesc("Optional style guidance for compatible models. Ignored for tts-1 and tts-1-hd.")
-      .addTextArea((text) =>
-        text
-          .setPlaceholder("Read clearly, at a steady pace, with a calm tone.")
-          .setValue(this.plugin.settings.instructions)
+      .setName("过滤残留 HTML 标签")
+      .setDesc("移除文档中残留的 HTML 标签，如 <div>、<span> 等。")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.filterHtmlTags)
           .onChange(async (value) => {
-            this.plugin.settings.instructions = value;
+            this.plugin.settings.filterHtmlTags = value;
             await this.plugin.saveSettings();
           }),
       );
 
     new Setting(containerEl)
-      .setName("Edge export path")
-      .setDesc("Temporary HTML file inside the vault for Microsoft Edge Read aloud.")
+      .setName("过滤多余空白字符")
+      .setDesc("移除多余的空格、制表符和超过两个连续换行符。")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.filterExtraWhitespace)
+          .onChange(async (value) => {
+            this.plugin.settings.filterExtraWhitespace = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("自定义过滤字符")
+      .setDesc("输入要过滤的字符列表，如 #$%^&。这些字符将被完全移除。")
       .addText((text) =>
         text
-          .setPlaceholder(DEFAULT_SETTINGS.edgeExportPath)
-          .setValue(this.plugin.settings.edgeExportPath)
+          .setPlaceholder("如 #$%^&")
+          .setValue(this.plugin.settings.customCharsToFilter)
           .onChange(async (value) => {
-            this.plugin.settings.edgeExportPath = normalizeVaultPath(value || DEFAULT_SETTINGS.edgeExportPath);
+            this.plugin.settings.customCharsToFilter = value;
             await this.plugin.saveSettings();
+          }),
+      );
+
+    // === 其他配置 ===
+    containerEl.createEl("h3", { text: "其他", cls: "cloud-tts-reader-settings-section" });
+
+    new Setting(containerEl)
+      .setName("保留生成的音频文件")
+      .setDesc("朗读结束后保留生成的 wav 文件，否则自动删除。")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.keepAudioFiles)
+          .onChange(async (value) => {
+            this.plugin.settings.keepAudioFiles = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("朗读完成后打开文件夹")
+      .setDesc("朗读结束后自动打开输出文件夹。")
+      .addToggle((toggle) =>
+        toggle
+          .setValue(this.plugin.settings.openFolderAfterSynthesis)
+          .onChange(async (value) => {
+            this.plugin.settings.openFolderAfterSynthesis = value;
+            await this.plugin.saveSettings();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("测试 TTS")
+      .setDesc("生成并播放一句测试语音，验证 TTS 配置是否正确。")
+      .addButton((button) =>
+        button
+          .setButtonText("测试")
+          .onClick(() => {
+            void this.plugin.testLocalTtsCli();
+          }),
+      );
+
+    new Setting(containerEl)
+      .setName("打开输出文件夹")
+      .setDesc("在文件管理器中打开音频文件输出目录。")
+      .addButton((button) =>
+        button
+          .setButtonText("打开")
+          .onClick(() => {
+            void this.plugin.openOutputFolder();
           }),
       );
   }
@@ -768,7 +1032,7 @@ function splitTextIntoChunks(text: string, maxCharacters: number): string[] {
     }
 
     const sentences = paragraph
-      .split(/(?<=[。！？.!?])\s+/)
+      .split(/(?<=[。！？；;.!?])\s*/)
       .map((sentence) => sentence.trim())
       .filter(Boolean);
 
@@ -806,7 +1070,12 @@ function splitLongText(text: string, maxCharacters: number): string[] {
   let remaining = text.trim();
 
   while (remaining.length > maxCharacters) {
-    let splitAt = remaining.lastIndexOf(" ", maxCharacters);
+    let splitAt = Math.max(
+      remaining.lastIndexOf("\n", maxCharacters),
+      remaining.lastIndexOf("。", maxCharacters) + 1,
+      remaining.lastIndexOf("，", maxCharacters) + 1,
+      remaining.lastIndexOf(" ", maxCharacters),
+    );
     if (splitAt < maxCharacters * 0.5) {
       splitAt = maxCharacters;
     }
@@ -833,121 +1102,29 @@ function getErrorMessage(error: unknown): string {
   return String(error);
 }
 
-function buildBaiduSpeechBody(options: {
-  text: string;
-  token: string;
-  cuid: string;
-  format: string;
-  speed: number;
-  pitch: number;
-  volume: number;
-  speakerId: number;
-}): string {
-  const encodedText = encodeURIComponent(encodeURIComponent(options.text));
-  const params = new URLSearchParams();
-  params.set("lan", "zh");
-  params.set("cuid", options.cuid);
-  params.set("ctp", "1");
-  params.set("tok", options.token);
-  params.set("aue", String(getBaiduAudioEncoding(options.format)));
-  params.set("spd", String(options.speed));
-  params.set("pit", String(options.pitch));
-  params.set("vol", String(options.volume));
-  params.set("per", String(options.speakerId));
-
-  return `tex=${encodedText}&${params.toString()}`;
-}
-
-function getBaiduAudioEncoding(format: string): number {
-  if (format === "wav") return 4;
-  if (format === "pcm") return 5;
-  return 3;
-}
-
-function parseJsonResponse(text: string): unknown {
-  try {
-    return JSON.parse(text);
-  } catch (error) {
-    throw new Error(`Invalid JSON response: ${text.slice(0, 500)}`);
-  }
-}
-
-function getHeader(headers: Record<string, string>, name: string): string {
-  const lowerName = name.toLowerCase();
-  for (const [key, value] of Object.entries(headers)) {
-    if (key.toLowerCase() === lowerName) return value.toLowerCase();
-  }
-  return "";
+function getAudioErrorMessage(audio: HTMLAudioElement): string {
+  const code = audio.error?.code;
+  if (code === MediaError.MEDIA_ERR_ABORTED) return "Audio playback was aborted.";
+  if (code === MediaError.MEDIA_ERR_NETWORK) return "Audio file could not be loaded.";
+  if (code === MediaError.MEDIA_ERR_DECODE) return "Audio file could not be decoded.";
+  if (code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED) return "Audio format is not supported.";
+  return "Audio playback failed.";
 }
 
 function normalizeVaultPath(path: string): string {
   return path.replace(/\\/g, "/").replace(/^\/+/, "").trim();
 }
 
-function getFolderPath(path: string): string {
-  const index = path.lastIndexOf("/");
-  if (index === -1) return "";
-  return path.slice(0, index);
-}
+async function ensureVaultFolder(app: App, folderPath: string) {
+  const parts = normalizeVaultPath(folderPath).split("/").filter(Boolean);
+  let current = "";
 
-async function ensureFolder(app: App, folderPath: string) {
-  if (!folderPath) return;
-  if (await app.vault.adapter.exists(folderPath)) return;
-  await app.vault.createFolder(folderPath);
-}
-
-function renderReadableHtml(title: string, text: string): string {
-  const paragraphs = text
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean)
-    .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, "<br>")}</p>`)
-    .join("\n");
-
-  return `<!doctype html>
-<html lang="zh-CN">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>${escapeHtml(title)}</title>
-  <style>
-    :root {
-      color-scheme: light dark;
-      font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
-      line-height: 1.75;
+  for (const part of parts) {
+    current = current ? `${current}/${part}` : part;
+    if (!(await app.vault.adapter.exists(current))) {
+      await app.vault.createFolder(current);
     }
-    body {
-      max-width: 820px;
-      margin: 48px auto;
-      padding: 0 28px 64px;
-      font-size: 20px;
-    }
-    h1 {
-      font-size: 32px;
-      line-height: 1.25;
-      margin: 0 0 28px;
-    }
-    p {
-      margin: 0 0 1.1em;
-    }
-  </style>
-</head>
-<body>
-  <article>
-    <h1>${escapeHtml(title)}</h1>
-    ${paragraphs}
-  </article>
-</body>
-</html>`;
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+  }
 }
 
 function toNativePath(basePath: string, vaultPath: string): string {
@@ -960,33 +1137,106 @@ function pathToFileUrl(filePath: string): string {
   return url.pathToFileURL(filePath).toString();
 }
 
-async function openUrlInMicrosoftEdge(fileUrl: string): Promise<void> {
+function formatTimestamp(date: Date): string {
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return [
+    date.getFullYear(),
+    pad(date.getMonth() + 1),
+    pad(date.getDate()),
+    "-",
+    pad(date.getHours()),
+    pad(date.getMinutes()),
+    pad(date.getSeconds()),
+  ].join("");
+}
+
+async function synthesizeWithTtsctl(options: {
+  ttsctlPath: string;
+  text: string;
+  outputPath: string;
+  speed: number;
+}): Promise<void> {
   const childProcess = require("child_process") as typeof import("child_process");
+  const path = require("path") as typeof import("path");
+  const fs = require("fs") as typeof import("fs");
+  const command = options.ttsctlPath.trim();
+  if (!command) throw new Error("Local TTS CLI path is empty.");
+
+  await new Promise<void>((resolve, reject) => {
+    const extension = path.extname(command).toLowerCase();
+    const child =
+      Platform.isWin && extension === ".ps1"
+        ? childProcess.spawn("powershell.exe", [
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            command,
+            "say",
+            options.text,
+            "--output",
+            options.outputPath,
+            "--speed",
+            String(options.speed),
+          ], { windowsHide: true })
+        : childProcess.spawn(command, [
+            "say",
+            options.text,
+            "--output",
+            options.outputPath,
+            "--speed",
+            String(options.speed),
+          ], { windowsHide: true });
+
+    let stderr = "";
+    child.stderr?.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code: number) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(stderr.trim() || `Local TTS CLI exited with code ${code}.`));
+    });
+  });
+
+  const stat = await fs.promises.stat(options.outputPath);
+  if (stat.size === 0) {
+    throw new Error("Local TTS CLI generated an empty audio file.");
+  }
+}
+
+async function removeFiles(paths: string[]) {
+  const fs = require("fs") as typeof import("fs");
+  await Promise.all(paths.map((path) => fs.promises.rm(path, { force: true })));
+}
+
+async function openPath(targetPath: string): Promise<void> {
+  const childProcess = require("child_process") as typeof import("child_process");
+  const path = require("path") as typeof import("path");
+  const fs = require("fs") as typeof import("fs");
+
+  // 检查目标是否为文件夹
+  const stats = await fs.promises.stat(targetPath);
+  const isDirectory = stats.isDirectory();
 
   if (Platform.isWin) {
-    const child = childProcess.spawn(
-      "cmd.exe",
-      ["/c", "start", "", "msedge", fileUrl],
-      { detached: true, stdio: "ignore", windowsHide: true },
-    );
-    child.unref();
+    if (isDirectory) {
+      // 文件夹：直接打开文件夹
+      childProcess.spawn("explorer.exe", [targetPath], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    } else {
+      // 文件：打开并选中该文件，使用 /select, 参数
+      childProcess.spawn("explorer.exe", ["/select,", targetPath], { detached: true, stdio: "ignore", windowsHide: true }).unref();
+    }
     return;
   }
 
   if (Platform.isMacOS) {
-    const child = childProcess.spawn(
-      "open",
-      ["-a", "Microsoft Edge", fileUrl],
-      { detached: true, stdio: "ignore" },
-    );
-    child.unref();
+    childProcess.spawn("open", [targetPath], { detached: true, stdio: "ignore" }).unref();
     return;
   }
 
-  const child = childProcess.spawn(
-    "microsoft-edge",
-    [fileUrl],
-    { detached: true, stdio: "ignore" },
-  );
-  child.unref();
+  childProcess.spawn("xdg-open", [targetPath], { detached: true, stdio: "ignore" }).unref();
 }

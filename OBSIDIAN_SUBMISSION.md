@@ -9,7 +9,7 @@ Replace `GITHUB_USER_OR_ORG/cloud-tts-reader` with the final GitHub repository p
   "id": "cloud-tts-reader",
   "name": "Cloud TTS Reader",
   "author": "zhangxiaolong",
-  "description": "Read selected text or active notes aloud with Baidu Cloud TTS, OpenAI-compatible TTS services, or Microsoft Edge.",
+  "description": "Read selected text or active Markdown notes aloud with a local TTS CLI.",
   "repo": "GITHUB_USER_OR_ORG/cloud-tts-reader"
 }
 ```
