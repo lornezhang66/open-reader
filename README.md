@@ -1,6 +1,6 @@
-# Cloud TTS Reader - Obsidian Local TTS Plugin
+# Open Reader - Obsidian Local TTS Plugin
 
-Cloud TTS Reader is an **Obsidian local TTS plugin** that reads selected text or active Markdown notes aloud with a local `ttsctl` text-to-speech CLI. It is built for offline note reading, Markdown narration, local-first speech synthesis, and shared macOS / Windows Obsidian vaults.
+Open Reader is an **Obsidian local TTS plugin** that reads selected text or active Markdown notes aloud with a local `ttsctl` text-to-speech CLI. It is built for offline note reading, Markdown narration, local-first speech synthesis, and shared macOS / Windows Obsidian vaults.
 
 Keywords: Obsidian TTS plugin, local text-to-speech, Markdown reader, offline TTS, note narration, `ttsctl`, macOS TTS, Windows TTS.
 
@@ -39,7 +39,7 @@ zhangxiaolong=C:\Users\18660\work_space_ai\07codex_default\local-tts-service\tts
 ```
 
 That `ttsctl` entrypoint uses the local `local-tts-service` repository and can synthesize offline without starting the HTTP service.
-The settings page can auto-detect an existing `ttsctl` path for the current machine, or install `local-tts-service` into the default sibling project path.
+The settings page can auto-detect an existing `ttsctl` path for the current machine and links to the `local-tts-service` install guide.
 
 ## Installation
 
@@ -47,12 +47,12 @@ The settings page can auto-detect an existing `ttsctl` path for the current mach
 2. Create this folder in your vault:
 
 ```text
-<vault>/.obsidian/plugins/cloud-tts-reader
+<vault>/.obsidian/plugins/open-reader
 ```
 
 3. Put the downloaded files into that folder.
 4. Restart Obsidian or reload community plugins.
-5. Enable **Cloud TTS Reader** in community plugin settings.
+5. Enable **Open Reader** in community plugin settings.
 
 ## Commands
 
@@ -65,7 +65,7 @@ The settings page can auto-detect an existing `ttsctl` path for the current mach
 
 ## Playback Controller
 
-When reading starts, Cloud TTS Reader shows a floating controller in the lower-right corner of Obsidian.
+When reading starts, Open Reader shows a floating controller in the lower-right corner of Obsidian.
 
 The controller shows the current synthesis/playback state and chunk progress, and provides:
 
@@ -79,8 +79,8 @@ If Obsidian or Electron blocks automatic playback after local synthesis, click `
 ## Settings
 
 - `Current detected system name`: read-only OS username, not saved into the shared vault config.
-- `TTS CLI path map`: one `system-name=ttsctl-path` entry per line. The plugin chooses the matching path at runtime, can auto-detect existing installs, and can install the sibling `local-tts-service` project.
-- `Output folder`: vault-relative folder for generated wav files. Default: `.cloud-tts-reader/audio`.
+- `TTS CLI path map`: one `system-name=ttsctl-path` entry per line. The plugin chooses the matching path at runtime and can auto-detect existing installs.
+- `Output folder`: vault-relative folder for generated wav files. Default: `.open-reader/audio`.
 - `Speed`: speech speed passed to the local CLI. Recommended range: `0.5` to `2`.
 - `Max chunk characters`: chunk size used before calling the CLI.
 - `Strip frontmatter`: skip YAML frontmatter.

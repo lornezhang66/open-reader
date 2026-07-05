@@ -12,7 +12,7 @@ import {
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "stopped";
 
-interface CloudTtsReaderSettings {
+interface OpenReaderSettings {
   ttsctlPath?: string;
   ttsctlPathsBySystem: string;
   outputFolder: string;
@@ -52,11 +52,6 @@ function getDefaultTtsctlPath(): string {
   return Platform.isWin ? WINDOWS_TTSCTL_PATH : MAC_TTSCTL_PATH;
 }
 
-function getDefaultLocalTtsServiceDir(): string {
-  const path = require("path") as typeof import("path");
-  return path.dirname(getDefaultTtsctlPath());
-}
-
 function defaultTtsctlCandidates(): string[] {
   return [
     getDefaultTtsctlPath(),
@@ -92,9 +87,9 @@ function formatTtsctlPathsBySystem(paths: Map<string, string>): string {
   return Array.from(paths.entries()).map(([name, path]) => `${name}=${path}`).join("\n");
 }
 
-const DEFAULT_SETTINGS: CloudTtsReaderSettings = {
+const DEFAULT_SETTINGS: OpenReaderSettings = {
   ttsctlPathsBySystem: defaultTtsctlPathsBySystem(),
-  outputFolder: ".cloud-tts-reader/audio",
+  outputFolder: ".open-reader/audio",
   speed: 1,
   playbackSpeed: 1,
   maxChunkCharacters: 450,
@@ -111,8 +106,8 @@ const DEFAULT_SETTINGS: CloudTtsReaderSettings = {
   filterExtraWhitespace: true,
 };
 
-export default class CloudTtsReaderPlugin extends Plugin {
-  settings: CloudTtsReaderSettings;
+export default class OpenReaderPlugin extends Plugin {
+  settings: OpenReaderSettings;
   private currentAudio: HTMLAudioElement | null = null;
   private objectUrls: string[] = [];
   private generatedFiles: string[] = [];
@@ -199,7 +194,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
       },
     });
 
-    this.addSettingTab(new CloudTtsReaderSettingTab(this.app, this));
+    this.addSettingTab(new OpenReaderSettingTab(this.app, this));
   }
 
   onunload() {
@@ -233,7 +228,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
       // 没在播放或已无目标文件时无需处理
       if (!this.activeFilePath) return;
       if (!this.isSourceFileStillOpen()) {
-        console.log("Cloud TTS Reader: source file closed, stopping playback");
+        console.log("Open Reader: source file closed, stopping playback");
         this.stopReading(true);
       }
     };
@@ -258,8 +253,8 @@ export default class CloudTtsReaderPlugin extends Plugin {
     }
   }
 
-  private migrateLegacyTtsctlPath(stored: Partial<CloudTtsReaderSettings> | null) {
-    const previous = stored as Partial<CloudTtsReaderSettings> & {
+  private migrateLegacyTtsctlPath(stored: Partial<OpenReaderSettings> | null) {
+    const previous = stored as Partial<OpenReaderSettings> & {
       windowsTtsctlPath?: string;
       macTtsctlPath?: string;
       linuxTtsctlPath?: string;
@@ -311,22 +306,6 @@ export default class CloudTtsReaderPlugin extends Plugin {
     return candidates.find((path): path is string => Boolean(path && fileExists(path))) || null;
   }
 
-  async installLocalTtsService(): Promise<void> {
-    const serviceDir = getDefaultLocalTtsServiceDir();
-    const ttsctlPath = getDefaultTtsctlPath();
-    const gitUrl = "https://github.com/lornezhang66/local-tts-service.git";
-    const childProcess = require("child_process") as typeof import("child_process");
-    const fs = require("fs") as typeof import("fs");
-
-    if (!fileExists(serviceDir)) {
-      await fs.promises.mkdir(require("path").dirname(serviceDir), { recursive: true });
-      await runCommand("git", ["clone", gitUrl, serviceDir], childProcess);
-    }
-    await runTtsctlInstall(ttsctlPath, childProcess);
-    this.addTtsctlPathForSystem(this.getSystemName(), ttsctlPath);
-    await this.saveSettings();
-  }
-
   getSystemName(): string {
     return this.getSystemNames()[0] || (Platform.isMacOS ? "lorne" : "zhangxiaolong");
   }
@@ -353,7 +332,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
   }
 
   private removeLegacySharedFields() {
-    const settings = this.settings as CloudTtsReaderSettings & {
+    const settings = this.settings as OpenReaderSettings & {
       systemName?: string;
       windowsTtsctlPath?: string;
       macTtsctlPath?: string;
@@ -372,7 +351,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
 
   async readActiveDocument() {
     if (!Platform.isDesktopApp) {
-      new Notice("Cloud TTS Reader: local TTS CLI is only supported on desktop.");
+      new Notice("Open Reader: local TTS CLI is only supported on desktop.");
       return;
     }
 
@@ -382,7 +361,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
     // 获取要朗读的文件路径
     const sourceFile = this.getSelectedFile() || this.app.workspace.getActiveFile();
     if (!sourceFile) {
-      new Notice("Cloud TTS Reader: no file selected or active.");
+      new Notice("Open Reader: no file selected or active.");
       return;
     }
 
@@ -397,7 +376,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
 
     const normalized = this.prepareText(await this.getTextToRead());
     if (!normalized.trim()) {
-      new Notice("Cloud TTS Reader: no readable text found.");
+      new Notice("Open Reader: no readable text found.");
       return;
     }
 
@@ -410,7 +389,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
       clampInteger(this.settings.maxChunkCharacters, 80, 4000),
     );
 
-    new Notice(`Cloud TTS Reader: synthesizing ${chunks.length} chunk(s) with local TTS.`);
+    new Notice(`Open Reader: synthesizing ${chunks.length} chunk(s) with local TTS.`);
 
     try {
       await this.ensureOutputFolder();
@@ -446,8 +425,8 @@ export default class CloudTtsReaderPlugin extends Plugin {
       }
     } catch (error) {
       this.updateStatus("idle");
-      new Notice(`Cloud TTS Reader failed: ${getErrorMessage(error)}`);
-      console.error("Cloud TTS Reader failed", error);
+      new Notice(`Open Reader failed: ${getErrorMessage(error)}`);
+      console.error("Open Reader failed", error);
     } finally {
       this.currentAudio = null;
       this.activeFilePath = null;
@@ -514,13 +493,13 @@ export default class CloudTtsReaderPlugin extends Plugin {
     this.updateStatus("stopped");
 
     if (showNotice) {
-      new Notice("Cloud TTS Reader: stopped.");
+      new Notice("Open Reader: stopped.");
     }
   }
 
   async testLocalTtsCli() {
     if (!Platform.isDesktopApp) {
-      new Notice("Cloud TTS Reader: local TTS CLI is only supported on desktop.");
+      new Notice("Open Reader: local TTS CLI is only supported on desktop.");
       return;
     }
 
@@ -536,7 +515,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
         outputPath,
         speed: clampNumber(this.settings.speed, 0.5, 2),
       });
-      new Notice(`Cloud TTS Reader: local TTS CLI test passed.`);
+      new Notice(`Open Reader: local TTS CLI test passed.`);
       this.showController();
       try {
         await this.playAudioFile(outputPath, () => {
@@ -552,8 +531,8 @@ export default class CloudTtsReaderPlugin extends Plugin {
         }
       }
     } catch (error) {
-      new Notice(`Cloud TTS Reader CLI test failed: ${getErrorMessage(error)}`);
-      console.error("Cloud TTS Reader CLI test failed", error);
+      new Notice(`Open Reader CLI test failed: ${getErrorMessage(error)}`);
+      console.error("Open Reader CLI test failed", error);
     }
   }
 
@@ -569,7 +548,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
   private getFileSystemAdapter(): FileSystemAdapter | null {
     const adapter = this.app.vault.adapter;
     if (!(adapter instanceof FileSystemAdapter)) {
-      new Notice("Cloud TTS Reader: this vault adapter cannot expose local file paths.");
+      new Notice("Open Reader: this vault adapter cannot expose local file paths.");
       return null;
     }
     return adapter;
@@ -762,57 +741,57 @@ export default class CloudTtsReaderPlugin extends Plugin {
   }
 
   private createController() {
-    this.controllerEl = document.body.createDiv({ cls: "cloud-tts-reader-controller" });
+    this.controllerEl = document.body.createDiv({ cls: "open-reader-controller" });
     this.controllerEl.hide();
 
     // === 顶部区域：标题 + 文件名 + 关闭按钮 ===
-    const header = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-header" });
+    const header = this.controllerEl.createDiv({ cls: "open-reader-controller-header" });
 
     // 拖拽手柄区域
-    const dragHandle = header.createDiv({ cls: "cloud-tts-reader-controller-drag" });
+    const dragHandle = header.createDiv({ cls: "open-reader-controller-drag" });
     dragHandle.setText("☰");
     dragHandle.setAttribute("aria-label", "拖拽移动");
 
     // 标题 + 文件名
-    const titleArea = header.createDiv({ cls: "cloud-tts-reader-controller-title-area" });
+    const titleArea = header.createDiv({ cls: "open-reader-controller-title-area" });
     this.controllerTitleEl = titleArea.createDiv({
-      cls: "cloud-tts-reader-controller-title",
-      text: "Cloud TTS Reader",
+      cls: "open-reader-controller-title",
+      text: "Open Reader",
     });
     this.fileNameEl = titleArea.createDiv({
-      cls: "cloud-tts-reader-controller-filename",
+      cls: "open-reader-controller-filename",
       text: "",
     });
 
     // 关闭按钮
     const closeButton = header.createEl("button", {
-      cls: "cloud-tts-reader-controller-close",
+      cls: "open-reader-controller-close",
       attr: { "aria-label": "关闭" }
     });
     closeButton.setText("✕");
     closeButton.addEventListener("click", () => this.hideController());
 
     // === 进度区域 ===
-    const progressArea = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-progress" });
-    const progressTrack = progressArea.createDiv({ cls: "cloud-tts-reader-controller-progress-track" });
-    this.progressBarEl = progressTrack.createDiv({ cls: "cloud-tts-reader-controller-progress-fill" });
-    this.progressTextEl = progressArea.createDiv({ cls: "cloud-tts-reader-controller-progress-text" });
+    const progressArea = this.controllerEl.createDiv({ cls: "open-reader-controller-progress" });
+    const progressTrack = progressArea.createDiv({ cls: "open-reader-controller-progress-track" });
+    this.progressBarEl = progressTrack.createDiv({ cls: "open-reader-controller-progress-fill" });
+    this.progressTextEl = progressArea.createDiv({ cls: "open-reader-controller-progress-text" });
 
     // === 状态区域 ===
-    const statusArea = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-status-area" });
+    const statusArea = this.controllerEl.createDiv({ cls: "open-reader-controller-status-area" });
     this.controllerStatusEl = statusArea.createDiv({
-      cls: "cloud-tts-reader-controller-status",
+      cls: "open-reader-controller-status",
       text: "空闲",
     });
 
     // === 播放速度区域（仅控制 HTMLAudio.playbackRate，不影响合成）===
-    const speedArea = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-speed" });
-    speedArea.createDiv({ cls: "cloud-tts-reader-controller-speed-label", text: "播放速度" });
-    const speedButtons = speedArea.createDiv({ cls: "cloud-tts-reader-controller-speed-buttons" });
+    const speedArea = this.controllerEl.createDiv({ cls: "open-reader-controller-speed" });
+    speedArea.createDiv({ cls: "open-reader-controller-speed-label", text: "播放速度" });
+    const speedButtons = speedArea.createDiv({ cls: "open-reader-controller-speed-buttons" });
     this.speedButtonEls = [];
-    for (const rate of CloudTtsReaderPlugin.PLAYBACK_SPEED_OPTIONS) {
+    for (const rate of OpenReaderPlugin.PLAYBACK_SPEED_OPTIONS) {
       const btn = speedButtons.createEl("button", {
-        cls: "cloud-tts-reader-controller-speed-btn",
+        cls: "open-reader-controller-speed-btn",
         text: `${rate}x`,
         attr: { "data-rate": String(rate) },
       });
@@ -821,7 +800,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
     }
 
     // === 操作按钮区域 ===
-    const actions = this.controllerEl.createDiv({ cls: "cloud-tts-reader-controller-actions" });
+    const actions = this.controllerEl.createDiv({ cls: "open-reader-controller-actions" });
     this.pauseButtonEl = actions.createEl("button", { text: "暂停" });
     this.pauseButtonEl.addEventListener("click", () => this.pauseReading());
 
@@ -840,7 +819,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
       // @ts-ignore - Obsidian App 类型不完整
       const setting = (this.app as any).setting;
       if (setting) {
-        setting.openTabById?.("cloud-tts-reader");
+        setting.openTabById?.("open-reader");
       }
     });
 
@@ -864,7 +843,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
   private setupControllerDrag() {
     if (!this.controllerEl) return;
 
-    const header = this.controllerEl.querySelector(".cloud-tts-reader-controller-drag");
+    const header = this.controllerEl.querySelector(".open-reader-controller-drag");
     if (!header) return;
 
     let isDragging = false;
@@ -1009,10 +988,10 @@ export default class CloudTtsReaderPlugin extends Plugin {
   }
 }
 
-class CloudTtsReaderSettingTab extends PluginSettingTab {
-  plugin: CloudTtsReaderPlugin;
+class OpenReaderSettingTab extends PluginSettingTab {
+  plugin: OpenReaderPlugin;
 
-  constructor(app: App, plugin: CloudTtsReaderPlugin) {
+  constructor(app: App, plugin: OpenReaderPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
@@ -1020,12 +999,12 @@ class CloudTtsReaderSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
-    containerEl.addClass("cloud-tts-reader-settings");
+    containerEl.addClass("open-reader-settings");
 
-    containerEl.createEl("h2", { text: "Cloud TTS Reader 语音朗读" });
+    containerEl.createEl("h2", { text: "Open Reader 语音朗读" });
 
     // === TTS 服务配置 ===
-    containerEl.createEl("h3", { text: "TTS 服务", cls: "cloud-tts-reader-settings-section" });
+    containerEl.createEl("h3", { text: "TTS 服务", cls: "open-reader-settings-section" });
 
     new Setting(containerEl)
       .setName("当前识别系统名")
@@ -1053,17 +1032,9 @@ class CloudTtsReaderSettingTab extends PluginSettingTab {
       )
       .addButton((button) =>
         button
-          .setButtonText("安装")
-          .onClick(async () => {
-            button.setDisabled(true).setButtonText("安装中...");
-            try {
-              await this.plugin.installLocalTtsService();
-              new Notice("local-tts-service 已安装。");
-              this.display();
-            } catch (error) {
-              new Notice(`安装失败: ${getErrorMessage(error)}`);
-              button.setDisabled(false).setButtonText("安装");
-            }
+          .setButtonText("安装指南")
+          .onClick(() => {
+            window.open("https://github.com/lornezhang66/local-tts-service#cli");
           }),
       )
       .addTextArea((text) => {
@@ -1093,7 +1064,7 @@ class CloudTtsReaderSettingTab extends PluginSettingTab {
       );
 
     // === 文本处理配置 ===
-    containerEl.createEl("h3", { text: "文本处理", cls: "cloud-tts-reader-settings-section" });
+    containerEl.createEl("h3", { text: "文本处理", cls: "open-reader-settings-section" });
 
     new Setting(containerEl)
       .setName("输出文件夹")
@@ -1146,7 +1117,7 @@ class CloudTtsReaderSettingTab extends PluginSettingTab {
       );
 
     // === 文本过滤配置 ===
-    containerEl.createEl("h3", { text: "文本过滤", cls: "cloud-tts-reader-settings-section" });
+    containerEl.createEl("h3", { text: "文本过滤", cls: "open-reader-settings-section" });
 
     new Setting(containerEl)
       .setName("过滤残留 HTML 标签")
@@ -1186,7 +1157,7 @@ class CloudTtsReaderSettingTab extends PluginSettingTab {
       );
 
     // === 其他配置 ===
-    containerEl.createEl("h3", { text: "其他", cls: "cloud-tts-reader-settings-section" });
+    containerEl.createEl("h3", { text: "其他", cls: "open-reader-settings-section" });
 
     new Setting(containerEl)
       .setName("保留生成的音频文件")
@@ -1431,48 +1402,6 @@ async function synthesizeWithTtsctl(options: {
   if (stat.size === 0) {
     throw new Error("Local TTS CLI generated an empty audio file.");
   }
-}
-
-async function runTtsctlInstall(
-  ttsctlPath: string,
-  childProcess: typeof import("child_process"),
-): Promise<void> {
-  const path = require("path") as typeof import("path");
-  const extension = path.extname(ttsctlPath).toLowerCase();
-  if (Platform.isWin && extension === ".ps1") {
-    await runCommand("powershell.exe", [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "Bypass",
-      "-File",
-      ttsctlPath,
-      "install",
-    ], childProcess);
-    return;
-  }
-  await runCommand(ttsctlPath, ["install"], childProcess);
-}
-
-async function runCommand(
-  command: string,
-  args: string[],
-  childProcess: typeof import("child_process"),
-): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const child = childProcess.spawn(command, args, { windowsHide: true });
-    let stderr = "";
-    child.stderr?.on("data", (data: Buffer) => {
-      stderr += data.toString();
-    });
-    child.on("error", reject);
-    child.on("close", (code: number) => {
-      if (code === 0) {
-        resolve();
-        return;
-      }
-      reject(new Error(stderr.trim() || `${command} exited with code ${code}.`));
-    });
-  });
 }
 
 async function removeFiles(paths: string[]) {

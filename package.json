@@ -1,6 +1,6 @@
 {
-  "name": "cloud-tts-reader",
-  "version": "1.0.1",
+  "name": "open-reader",
+  "version": "1.0.4",
   "description": "Obsidian local TTS plugin for reading Markdown notes aloud with an offline text-to-speech CLI.",
   "main": "main.js",
   "scripts": {
