@@ -48,6 +48,32 @@ function fallbackTtsctlPath(): string {
   return "ttsctl";
 }
 
+function getDefaultTtsctlPath(): string {
+  return Platform.isWin ? WINDOWS_TTSCTL_PATH : MAC_TTSCTL_PATH;
+}
+
+function getDefaultLocalTtsServiceDir(): string {
+  const path = require("path") as typeof import("path");
+  return path.dirname(getDefaultTtsctlPath());
+}
+
+function defaultTtsctlCandidates(): string[] {
+  return [
+    getDefaultTtsctlPath(),
+    WINDOWS_TTSCTL_PATH,
+    MAC_TTSCTL_PATH,
+  ];
+}
+
+function fileExists(filePath: string): boolean {
+  try {
+    const fs = require("fs") as typeof import("fs");
+    return fs.existsSync(filePath);
+  } catch {
+    return false;
+  }
+}
+
 function parseTtsctlPathsBySystem(value: string): Map<string, string> {
   const result = new Map<string, string>();
   for (const line of value.split(/\r?\n/)) {
@@ -227,6 +253,9 @@ export default class CloudTtsReaderPlugin extends Plugin {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
     this.migrateLegacyTtsctlPath(stored);
     this.removeLegacySharedFields();
+    if (this.setDetectedTtsctlPath()) {
+      await this.saveSettings();
+    }
   }
 
   private migrateLegacyTtsctlPath(stored: Partial<CloudTtsReaderSettings> | null) {
@@ -259,9 +288,43 @@ export default class CloudTtsReaderPlugin extends Plugin {
     const paths = parseTtsctlPathsBySystem(this.settings.ttsctlPathsBySystem);
     for (const name of this.getSystemNames()) {
       const path = paths.get(name);
-      if (path) return path;
+      if (path && fileExists(path)) return path;
     }
-    return fallbackTtsctlPath();
+    return this.detectTtsctlPath() || fallbackTtsctlPath();
+  }
+
+  setDetectedTtsctlPath(): boolean {
+    const path = this.detectTtsctlPath();
+    if (!path) return false;
+    const before = this.settings.ttsctlPathsBySystem;
+    this.addTtsctlPathForSystem(this.getSystemName(), path);
+    return before !== this.settings.ttsctlPathsBySystem;
+  }
+
+  private detectTtsctlPath(): string | null {
+    const paths = parseTtsctlPathsBySystem(this.settings.ttsctlPathsBySystem);
+    const candidates = [
+      ...this.getSystemNames().map((name) => paths.get(name)),
+      ...Array.from(paths.values()),
+      ...defaultTtsctlCandidates(),
+    ];
+    return candidates.find((path): path is string => Boolean(path && fileExists(path))) || null;
+  }
+
+  async installLocalTtsService(): Promise<void> {
+    const serviceDir = getDefaultLocalTtsServiceDir();
+    const ttsctlPath = getDefaultTtsctlPath();
+    const gitUrl = "https://github.com/lornezhang66/local-tts-service.git";
+    const childProcess = require("child_process") as typeof import("child_process");
+    const fs = require("fs") as typeof import("fs");
+
+    if (!fileExists(serviceDir)) {
+      await fs.promises.mkdir(require("path").dirname(serviceDir), { recursive: true });
+      await runCommand("git", ["clone", gitUrl, serviceDir], childProcess);
+    }
+    await runTtsctlInstall(ttsctlPath, childProcess);
+    this.addTtsctlPathForSystem(this.getSystemName(), ttsctlPath);
+    await this.saveSettings();
   }
 
   getSystemName(): string {
@@ -975,6 +1038,34 @@ class CloudTtsReaderSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("TTS CLI 路径映射")
       .setDesc("一行一个：系统名=ttsctl 路径。共享 vault 时，Mac 和 Windows 各自按系统名选择。")
+      .addButton((button) =>
+        button
+          .setButtonText("自动识别")
+          .onClick(async () => {
+            if (!this.plugin.setDetectedTtsctlPath()) {
+              new Notice("未发现本机 ttsctl，请安装 local-tts-service。");
+              return;
+            }
+            await this.plugin.saveSettings();
+            new Notice("已识别本机 ttsctl 路径。");
+            this.display();
+          }),
+      )
+      .addButton((button) =>
+        button
+          .setButtonText("安装")
+          .onClick(async () => {
+            button.setDisabled(true).setButtonText("安装中...");
+            try {
+              await this.plugin.installLocalTtsService();
+              new Notice("local-tts-service 已安装。");
+              this.display();
+            } catch (error) {
+              new Notice(`安装失败: ${getErrorMessage(error)}`);
+              button.setDisabled(false).setButtonText("安装");
+            }
+          }),
+      )
       .addTextArea((text) => {
         text
           .setPlaceholder(DEFAULT_SETTINGS.ttsctlPathsBySystem)
@@ -1340,6 +1431,48 @@ async function synthesizeWithTtsctl(options: {
   if (stat.size === 0) {
     throw new Error("Local TTS CLI generated an empty audio file.");
   }
+}
+
+async function runTtsctlInstall(
+  ttsctlPath: string,
+  childProcess: typeof import("child_process"),
+): Promise<void> {
+  const path = require("path") as typeof import("path");
+  const extension = path.extname(ttsctlPath).toLowerCase();
+  if (Platform.isWin && extension === ".ps1") {
+    await runCommand("powershell.exe", [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-File",
+      ttsctlPath,
+      "install",
+    ], childProcess);
+    return;
+  }
+  await runCommand(ttsctlPath, ["install"], childProcess);
+}
+
+async function runCommand(
+  command: string,
+  args: string[],
+  childProcess: typeof import("child_process"),
+): Promise<void> {
+  await new Promise<void>((resolve, reject) => {
+    const child = childProcess.spawn(command, args, { windowsHide: true });
+    let stderr = "";
+    child.stderr?.on("data", (data: Buffer) => {
+      stderr += data.toString();
+    });
+    child.on("error", reject);
+    child.on("close", (code: number) => {
+      if (code === 0) {
+        resolve();
+        return;
+      }
+      reject(new Error(stderr.trim() || `${command} exited with code ${code}.`));
+    });
+  });
 }
 
 async function removeFiles(paths: string[]) {

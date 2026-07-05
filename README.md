@@ -36,6 +36,7 @@ zhangxiaolong=C:\Users\18660\work_space_ai\07codex_default\local-tts-service\tts
 ```
 
 That `ttsctl` entrypoint uses the local `local-tts-service` repository and can synthesize offline without starting the HTTP service.
+The settings page can auto-detect an existing `ttsctl` path for the current machine, or install `local-tts-service` into the default sibling project path.
 
 ## Installation
 
@@ -75,7 +76,7 @@ If Obsidian or Electron blocks automatic playback after local synthesis, click `
 ## Settings
 
 - `Current detected system name`: read-only OS username, not saved into the shared vault config.
-- `TTS CLI path map`: one `system-name=ttsctl-path` entry per line. The plugin chooses the matching path at runtime.
+- `TTS CLI path map`: one `system-name=ttsctl-path` entry per line. The plugin chooses the matching path at runtime, can auto-detect existing installs, and can install the sibling `local-tts-service` project.
 - `Output folder`: vault-relative folder for generated wav files. Default: `.cloud-tts-reader/audio`.
 - `Speed`: speech speed passed to the local CLI. Recommended range: `0.5` to `2`.
 - `Max chunk characters`: chunk size used before calling the CLI.
