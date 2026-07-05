@@ -17,7 +17,7 @@ The plugin is intentionally local-first: Obsidian extracts and cleans Markdown t
 - Open the generated audio output folder.
 - Strip YAML frontmatter.
 - Optionally skip fenced code blocks.
-- Clean common Markdown syntax before narration, including headings, links, embeds, wikilinks, blockquotes, list markers, emphasis, and inline code.
+- Clean common Markdown syntax before narration, including headings, links, embeds, wikilinks, blockquotes, list markers, emphasis, inline code, tables, and file references.
 - Desktop-only by design, because local CLI execution requires the Obsidian desktop runtime.
 
 ## Local TTS CLI Contract
@@ -28,10 +28,11 @@ The configured CLI must support this command shape:
 ttsctl say <text> --output <wav-path> --speed <number>
 ```
 
-The default path is tuned for this machine:
+Default settings store CLI paths by system name so the same Obsidian vault can be shared between macOS and Windows:
 
 ```text
-C:\Users\18660\work_space_ai\07codex_default\local-tts-service\ttsctl.ps1
+lorne=/Users/lorne/work_space_ai/codex-defaute/local-tts-service/ttsctl.sh
+zhangxiaolong=C:\Users\18660\work_space_ai\07codex_default\local-tts-service\ttsctl.ps1
 ```
 
 That `ttsctl` entrypoint uses the local `local-tts-service` repository and can synthesize offline without starting the HTTP service.
@@ -73,12 +74,13 @@ If Obsidian or Electron blocks automatic playback after local synthesis, click `
 
 ## Settings
 
-- `Local TTS CLI`: path to `ttsctl.ps1`, `ttsctl.py`, `ttsctl.sh`, or another compatible executable.
+- `Current detected system name`: read-only OS username, not saved into the shared vault config.
+- `TTS CLI path map`: one `system-name=ttsctl-path` entry per line. The plugin chooses the matching path at runtime.
 - `Output folder`: vault-relative folder for generated wav files. Default: `.cloud-tts-reader/audio`.
 - `Speed`: speech speed passed to the local CLI. Recommended range: `0.5` to `2`.
 - `Max chunk characters`: chunk size used before calling the CLI.
 - `Strip frontmatter`: skip YAML frontmatter.
-- `Skip fenced code blocks`: omit Markdown code blocks.
+- `Skip non-text fenced code blocks`: read `text` / `txt` / `plain` fences, omit other code fences.
 - `Keep generated audio files`: keep wav files after playback instead of deleting them.
 - `Open folder after synthesis`: open the output folder after a read completes.
 

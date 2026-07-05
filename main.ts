@@ -13,7 +13,8 @@ import {
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "stopped";
 
 interface CloudTtsReaderSettings {
-  ttsctlPath: string;
+  ttsctlPath?: string;
+  ttsctlPathsBySystem: string;
   outputFolder: string;
   speed: number;
   playbackSpeed: number; // 播放速度（HTMLAudio.playbackRate），独立于合成速度 speed
@@ -31,14 +32,48 @@ interface CloudTtsReaderSettings {
   filterExtraWhitespace: boolean;
 }
 
+const WINDOWS_TTSCTL_PATH = "C:\\Users\\18660\\work_space_ai\\07codex_default\\local-tts-service\\ttsctl.ps1";
+const MAC_TTSCTL_PATH = "/Users/lorne/work_space_ai/codex-defaute/local-tts-service/ttsctl.sh";
+
+function defaultTtsctlPathsBySystem(): string {
+  return [
+    `lorne=${MAC_TTSCTL_PATH}`,
+    `zhangxiaolong=${WINDOWS_TTSCTL_PATH}`,
+  ].join("\n");
+}
+
+function fallbackTtsctlPath(): string {
+  if (Platform.isWin) return WINDOWS_TTSCTL_PATH;
+  if (Platform.isMacOS) return MAC_TTSCTL_PATH;
+  return "ttsctl";
+}
+
+function parseTtsctlPathsBySystem(value: string): Map<string, string> {
+  const result = new Map<string, string>();
+  for (const line of value.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const separator = trimmed.indexOf("=");
+    if (separator <= 0) continue;
+    const name = trimmed.slice(0, separator).trim();
+    const path = trimmed.slice(separator + 1).trim();
+    if (name && path) result.set(name, path);
+  }
+  return result;
+}
+
+function formatTtsctlPathsBySystem(paths: Map<string, string>): string {
+  return Array.from(paths.entries()).map(([name, path]) => `${name}=${path}`).join("\n");
+}
+
 const DEFAULT_SETTINGS: CloudTtsReaderSettings = {
-  ttsctlPath: "C:\\Users\\18660\\work_space_ai\\07codex_default\\local-tts-service\\ttsctl.ps1",
+  ttsctlPathsBySystem: defaultTtsctlPathsBySystem(),
   outputFolder: ".cloud-tts-reader/audio",
   speed: 1,
   playbackSpeed: 1,
   maxChunkCharacters: 450,
   stripFrontmatter: true,
-  skipCodeBlocks: false,
+  skipCodeBlocks: true,
   keepAudioFiles: false,
   openFolderAfterSynthesis: false,
   // 控制器美化
@@ -190,6 +225,82 @@ export default class CloudTtsReaderPlugin extends Plugin {
   async loadSettings() {
     const stored = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
+    this.migrateLegacyTtsctlPath(stored);
+    this.removeLegacySharedFields();
+  }
+
+  private migrateLegacyTtsctlPath(stored: Partial<CloudTtsReaderSettings> | null) {
+    const previous = stored as Partial<CloudTtsReaderSettings> & {
+      windowsTtsctlPath?: string;
+      macTtsctlPath?: string;
+      linuxTtsctlPath?: string;
+    } | null;
+    this.addTtsctlPathForSystem("zhangxiaolong", previous?.windowsTtsctlPath);
+    this.addTtsctlPathForSystem("lorne", previous?.macTtsctlPath);
+    this.addTtsctlPathForSystem("linux", previous?.linuxTtsctlPath);
+
+    const legacyPath = stored?.ttsctlPath?.trim();
+    if (!legacyPath) return;
+    if (legacyPath === WINDOWS_TTSCTL_PATH) return;
+    if (legacyPath === MAC_TTSCTL_PATH) return;
+    this.addTtsctlPathForSystem(this.getSystemName(), legacyPath);
+  }
+
+  private addTtsctlPathForSystem(systemName: string, path?: string) {
+    const nextPath = path?.trim();
+    if (!nextPath) return;
+    const paths = parseTtsctlPathsBySystem(this.settings.ttsctlPathsBySystem);
+    if (paths.get(systemName) === nextPath) return;
+    paths.set(systemName, nextPath);
+    this.settings.ttsctlPathsBySystem = formatTtsctlPathsBySystem(paths);
+  }
+
+  private getTtsctlPath(): string {
+    const paths = parseTtsctlPathsBySystem(this.settings.ttsctlPathsBySystem);
+    for (const name of this.getSystemNames()) {
+      const path = paths.get(name);
+      if (path) return path;
+    }
+    return fallbackTtsctlPath();
+  }
+
+  getSystemName(): string {
+    return this.getSystemNames()[0] || (Platform.isMacOS ? "lorne" : "zhangxiaolong");
+  }
+
+  getSystemNames(): string[] {
+    const names = new Set<string>();
+    const add = (value?: string) => {
+      const name = value?.trim();
+      if (name) names.add(name);
+    };
+    try {
+      const os = require("os") as typeof import("os");
+      add(os.userInfo().username);
+      add(os.hostname());
+      add(os.hostname().replace(/\.local$/i, ""));
+    } catch {
+      // Obsidian desktop normally has Node available; keep a deterministic fallback.
+    }
+    add(process.env.COMPUTERNAME);
+    add(process.env.USERNAME);
+    add(process.env.USER);
+    add(Platform.isMacOS ? "lorne" : "zhangxiaolong");
+    return Array.from(names);
+  }
+
+  private removeLegacySharedFields() {
+    const settings = this.settings as CloudTtsReaderSettings & {
+      systemName?: string;
+      windowsTtsctlPath?: string;
+      macTtsctlPath?: string;
+      linuxTtsctlPath?: string;
+    };
+    delete settings.systemName;
+    delete settings.ttsctlPath;
+    delete settings.windowsTtsctlPath;
+    delete settings.macTtsctlPath;
+    delete settings.linuxTtsctlPath;
   }
 
   async saveSettings() {
@@ -247,7 +358,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
         this.updateStatus("loading", index + 1, chunks.length);
         const outputPath = this.getChunkOutputPath(adapter, index + 1);
         await synthesizeWithTtsctl({
-          ttsctlPath: this.settings.ttsctlPath,
+          ttsctlPath: this.getTtsctlPath(),
           text: chunks[index],
           outputPath,
           speed: clampNumber(this.settings.speed, 0.5, 2),
@@ -357,7 +468,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
       await this.ensureOutputFolder();
       const outputPath = this.getNamedOutputPath(adapter, "ttsctl-test.wav");
       await synthesizeWithTtsctl({
-        ttsctlPath: this.settings.ttsctlPath,
+        ttsctlPath: this.getTtsctlPath(),
         text: "Obsidian 本地朗读插件测试成功。",
         outputPath,
         speed: clampNumber(this.settings.speed, 0.5, 2),
@@ -457,10 +568,7 @@ export default class CloudTtsReaderPlugin extends Plugin {
       next = next.replace(/^---\n[\s\S]*?\n---\n?/, "");
     }
 
-    if (this.settings.skipCodeBlocks) {
-      next = next.replace(/```[\s\S]*?```/g, "\n");
-      next = next.replace(/~~~[\s\S]*?~~~/g, "\n");
-    }
+    next = normalizeFencedBlocks(next, this.settings.skipCodeBlocks);
 
     // 过滤残留 HTML 标签
     if (this.settings.filterHtmlTags) {
@@ -482,17 +590,23 @@ export default class CloudTtsReaderPlugin extends Plugin {
     }
 
     let result = next
-      .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+      .replace(/!\[[^\]]*\]\([^)]+\)/g, "")
+      .replace(/\[[^\]]+\]\([^)]+\)/g, "")
+      .replace(/https?:\/\/\S+/g, "")
       .replace(/\[\[([^\]|]+)\|([^\]]+)\]\]/g, "$2")
       .replace(/\[\[([^\]]+)\]\]/g, "$1")
       .replace(/^[ \t]*#{1,6}[ \t]+/gm, "")
       .replace(/^[ \t]*>[ \t]?/gm, "")
       .replace(/^[ \t]*[-*+][ \t]+/gm, "")
       .replace(/^[ \t]*\d+\.[ \t]+/gm, "")
+      .replace(/\[[ xX]\][ \t]*/g, "")
+      .replace(/^[ \t]*[-:| ]{3,}$/gm, "")
+      .replace(/\|/g, " ")
       .replace(/\*\*([^*]+)\*\*/g, "$1")
       .replace(/\*([^*]+)\*/g, "$1")
+      .replace(/~~([^~]+)~~/g, "$1")
       .replace(/`([^`]+)`/g, "$1")
+      .replace(/[\w./~ -]+:\d+(?::\d+)?/g, "")
       .trim();
 
     // 段落换行处添加停顿标记
@@ -851,17 +965,27 @@ class CloudTtsReaderSettingTab extends PluginSettingTab {
     containerEl.createEl("h3", { text: "TTS 服务", cls: "cloud-tts-reader-settings-section" });
 
     new Setting(containerEl)
-      .setName("TTS CLI 路径")
-      .setDesc("本地 TTS 命令行工具路径，支持 ttsctl.ps1、ttsctl.py、ttsctl.sh 等。命令格式：say <文本> --output <输出文件> --speed <语速>")
-      .addText((text) =>
+      .setName("当前识别系统名")
+      .setDesc("此值不写入共享配置，来自当前电脑的用户名、主机名等候选名。")
+      .addText((text) => {
+        text.setValue(this.plugin.getSystemNames().join(", "));
+        text.inputEl.disabled = true;
+      });
+
+    new Setting(containerEl)
+      .setName("TTS CLI 路径映射")
+      .setDesc("一行一个：系统名=ttsctl 路径。共享 vault 时，Mac 和 Windows 各自按系统名选择。")
+      .addTextArea((text) => {
         text
-          .setPlaceholder(DEFAULT_SETTINGS.ttsctlPath)
-          .setValue(this.plugin.settings.ttsctlPath)
+          .setPlaceholder(DEFAULT_SETTINGS.ttsctlPathsBySystem)
+          .setValue(this.plugin.settings.ttsctlPathsBySystem)
           .onChange(async (value) => {
-            this.plugin.settings.ttsctlPath = value.trim() || DEFAULT_SETTINGS.ttsctlPath;
+            this.plugin.settings.ttsctlPathsBySystem = value.trim() || DEFAULT_SETTINGS.ttsctlPathsBySystem;
             await this.plugin.saveSettings();
-          }),
-      );
+          });
+        text.inputEl.rows = 4;
+        text.inputEl.cols = 64;
+      });
 
     new Setting(containerEl)
       .setName("语速")
@@ -919,8 +1043,8 @@ class CloudTtsReaderSettingTab extends PluginSettingTab {
       );
 
     new Setting(containerEl)
-      .setName("跳过代码块")
-      .setDesc("不朗读文档中的代码块内容。")
+      .setName("跳过非文本代码块")
+      .setDesc("朗读 text/txt/plain 代码块，跳过其他语言代码块。")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.skipCodeBlocks)
@@ -1148,6 +1272,16 @@ function formatTimestamp(date: Date): string {
     pad(date.getMinutes()),
     pad(date.getSeconds()),
   ].join("");
+}
+
+function normalizeFencedBlocks(text: string, skipCodeBlocks: boolean): string {
+  return text.replace(/(^|\n)(```|~~~)[ \t]*([^\n`]*)\n([\s\S]*?)\n\2[ \t]*(?=\n|$)/g, (_match, prefix, _fence, info, content) => {
+    const language = String(info || "").trim().toLowerCase().split(/\s+/)[0];
+    if (["text", "txt", "plain", "plaintext"].includes(language)) {
+      return `${prefix}${String(content).trim()}\n`;
+    }
+    return skipCodeBlocks ? `${prefix}\n` : `${prefix}${String(content).trim()}\n`;
+  });
 }
 
 async function synthesizeWithTtsctl(options: {
