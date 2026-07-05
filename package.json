@@ -1,6 +1,6 @@
 {
   "name": "open-reader",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "Read Markdown notes aloud with a local offline text-to-speech CLI.",
   "main": "main.js",
   "scripts": {
@@ -22,7 +22,6 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.15.29",
-    "builtin-modules": "^5.0.0",
     "esbuild": "^0.25.5",
     "obsidian": "^1.8.7",
     "typescript": "^5.8.3"

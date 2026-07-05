@@ -9,8 +9,15 @@ import {
   Setting,
   TFile,
 } from "obsidian";
+import * as childProcess from "child_process";
+import * as fs from "fs";
+import * as os from "os";
+import * as path from "path";
 
 type PlaybackState = "idle" | "loading" | "playing" | "paused" | "stopped";
+
+type MarkdownViewWithSelectedFiles = MarkdownView & { selectedFiles?: TFile[] };
+type AppWithSettings = App & { setting?: { openTabById?: (id: string) => void } };
 
 interface OpenReaderSettings {
   ttsctlPath?: string;
@@ -62,7 +69,6 @@ function defaultTtsctlCandidates(): string[] {
 
 function fileExists(filePath: string): boolean {
   try {
-    const fs = require("fs") as typeof import("fs");
     return fs.existsSync(filePath);
   } catch {
     return false;
@@ -136,7 +142,7 @@ export default class OpenReaderPlugin extends Plugin {
 
     this.addRibbonIcon("volume-2", "Read note aloud or show controller", () => {
       // 如果控制器已隐藏，先显示控制器
-      if (!this.controllerEl || this.controllerEl.style.display === "none") {
+      if (!this.controllerEl || !this.controllerEl.isShown()) {
         this.showController();
       }
       void this.readActiveDocument();
@@ -317,7 +323,6 @@ export default class OpenReaderPlugin extends Plugin {
       if (name) names.add(name);
     };
     try {
-      const os = require("os") as typeof import("os");
       add(os.userInfo().username);
       add(os.hostname());
       add(os.hostname().replace(/\.local$/i, ""));
@@ -584,12 +589,12 @@ export default class OpenReaderPlugin extends Plugin {
   private getSelectedFile(): TFile | null {
     // 尝试多种方式获取选中的文件
     // 方式1: 从 workspace 的 leaf 中获取
-    // @ts-ignore - internal API
-    const leaves = this.app.workspace?.getLeavesOfType("markdown");
+    const leaves = this.app.workspace.getLeavesOfType("markdown");
     if (leaves && leaves.length > 0) {
       for (const leaf of leaves) {
-        // @ts-ignore - internal API
-        const selectedFiles = leaf?.view?.selectedFiles;
+        const selectedFiles = leaf.view instanceof MarkdownView
+          ? (leaf.view as MarkdownViewWithSelectedFiles).selectedFiles
+          : undefined;
         if (selectedFiles && selectedFiles.length > 0) {
           return selectedFiles[0];
         }
@@ -659,7 +664,6 @@ export default class OpenReaderPlugin extends Plugin {
   }
 
   private async playAudioFile(filePath: string, onPlaybackStarted?: () => void): Promise<void> {
-    const fs = require("fs") as typeof import("fs");
     const file = await fs.promises.readFile(filePath);
     const audio = file.buffer.slice(file.byteOffset, file.byteOffset + file.byteLength);
     const url = URL.createObjectURL(new Blob([audio], { type: "audio/wav" }));
@@ -685,13 +689,13 @@ export default class OpenReaderPlugin extends Plugin {
       };
 
       // 尝试播放
-      const playPromise = audio.play();
-      if (playPromise) {
-        playPromise.then(() => {
+      audio.play()
+        .then(() => {
           // 播放成功，等待 onended
           onPlaybackStarted?.();
           this.finishCurrentPlayback = resolve;
-        }).catch((error) => {
+        })
+        .catch((error) => {
           // 播放被阻止或失败，保持 audio 引用有效，等待用户点继续
           this.finishCurrentPlayback = resolve;
           new Notice("播放被阻止，请点击「继续」按钮播放");
@@ -699,11 +703,6 @@ export default class OpenReaderPlugin extends Plugin {
           // 此时 audio.paused 为 true，刷新按钮：禁用暂停、启用继续
           this.refreshControllerButtons();
         });
-      } else {
-        // 浏览器不支持 play()
-        this.currentAudio = null;
-        reject(new Error("Audio play not supported"));
-      }
     });
   }
 
@@ -741,11 +740,13 @@ export default class OpenReaderPlugin extends Plugin {
   }
 
   private createController() {
-    this.controllerEl = document.body.createDiv({ cls: "open-reader-controller" });
-    this.controllerEl.hide();
+    const activeDocument = this.app.workspace.containerEl.ownerDocument;
+    const controllerEl = activeDocument.body.createDiv({ cls: "open-reader-controller" });
+    this.controllerEl = controllerEl;
+    controllerEl.hide();
 
     // === 顶部区域：标题 + 文件名 + 关闭按钮 ===
-    const header = this.controllerEl.createDiv({ cls: "open-reader-controller-header" });
+    const header = controllerEl.createDiv({ cls: "open-reader-controller-header" });
 
     // 拖拽手柄区域
     const dragHandle = header.createDiv({ cls: "open-reader-controller-drag" });
@@ -772,20 +773,20 @@ export default class OpenReaderPlugin extends Plugin {
     closeButton.addEventListener("click", () => this.hideController());
 
     // === 进度区域 ===
-    const progressArea = this.controllerEl.createDiv({ cls: "open-reader-controller-progress" });
+    const progressArea = controllerEl.createDiv({ cls: "open-reader-controller-progress" });
     const progressTrack = progressArea.createDiv({ cls: "open-reader-controller-progress-track" });
     this.progressBarEl = progressTrack.createDiv({ cls: "open-reader-controller-progress-fill" });
     this.progressTextEl = progressArea.createDiv({ cls: "open-reader-controller-progress-text" });
 
     // === 状态区域 ===
-    const statusArea = this.controllerEl.createDiv({ cls: "open-reader-controller-status-area" });
+    const statusArea = controllerEl.createDiv({ cls: "open-reader-controller-status-area" });
     this.controllerStatusEl = statusArea.createDiv({
       cls: "open-reader-controller-status",
       text: "空闲",
     });
 
     // === 播放速度区域（仅控制 HTMLAudio.playbackRate，不影响合成）===
-    const speedArea = this.controllerEl.createDiv({ cls: "open-reader-controller-speed" });
+    const speedArea = controllerEl.createDiv({ cls: "open-reader-controller-speed" });
     speedArea.createDiv({ cls: "open-reader-controller-speed-label", text: "播放速度" });
     const speedButtons = speedArea.createDiv({ cls: "open-reader-controller-speed-buttons" });
     this.speedButtonEls = [];
@@ -800,7 +801,7 @@ export default class OpenReaderPlugin extends Plugin {
     }
 
     // === 操作按钮区域 ===
-    const actions = this.controllerEl.createDiv({ cls: "open-reader-controller-actions" });
+    const actions = controllerEl.createDiv({ cls: "open-reader-controller-actions" });
     this.pauseButtonEl = actions.createEl("button", { text: "暂停" });
     this.pauseButtonEl.addEventListener("click", () => this.pauseReading());
 
@@ -816,11 +817,7 @@ export default class OpenReaderPlugin extends Plugin {
     const settingsButton = actions.createEl("button", { text: "⚙" });
     settingsButton.setAttribute("aria-label", "设置");
     settingsButton.addEventListener("click", () => {
-      // @ts-ignore - Obsidian App 类型不完整
-      const setting = (this.app as any).setting;
-      if (setting) {
-        setting.openTabById?.("open-reader");
-      }
+      (this.app as AppWithSettings).setting?.openTabById?.("open-reader");
     });
 
     // 目录按钮
@@ -841,10 +838,13 @@ export default class OpenReaderPlugin extends Plugin {
 
   // 设置控制器拖拽
   private setupControllerDrag() {
-    if (!this.controllerEl) return;
+    const controllerEl = this.controllerEl;
+    if (!controllerEl) return;
 
-    const header = this.controllerEl.querySelector(".open-reader-controller-drag");
+    const header = controllerEl.querySelector(".open-reader-controller-drag");
     if (!header) return;
+    const ownerDocument = controllerEl.ownerDocument;
+    const ownerWindow = ownerDocument.defaultView || window;
 
     let isDragging = false;
     let startX = 0;
@@ -859,16 +859,18 @@ export default class OpenReaderPlugin extends Plugin {
       startY = e.clientY;
 
       // 读取当前 right/bottom 位置
-      const style = window.getComputedStyle(this.controllerEl!);
+      const style = ownerWindow.getComputedStyle(controllerEl);
       startRight = parseInt(style.right) || 24;
       startBottom = parseInt(style.bottom) || 28;
 
       // 切换到 left/top 定位以便计算
-      this.controllerEl!.style.right = "auto";
-      this.controllerEl!.style.left = `${window.innerWidth - startRight - this.controllerEl!.offsetWidth}px`;
-      this.controllerEl!.style.top = `${window.innerHeight - startBottom - this.controllerEl!.offsetHeight}px`;
-      this.controllerEl!.style.bottom = "auto";
-      this.controllerEl!.classList.add("is-dragging");
+      controllerEl.setCssStyles({
+        right: "auto",
+        left: `${ownerWindow.innerWidth - startRight - controllerEl.offsetWidth}px`,
+        top: `${ownerWindow.innerHeight - startBottom - controllerEl.offsetHeight}px`,
+        bottom: "auto",
+      });
+      controllerEl.classList.add("is-dragging");
     };
 
     const onMouseMove = (e: MouseEvent) => {
@@ -877,22 +879,24 @@ export default class OpenReaderPlugin extends Plugin {
       const deltaY = e.clientY - startY;
 
       // 新的 left/top 位置
-      const newLeft = Math.max(0, window.innerWidth - startRight - this.controllerEl!.offsetWidth + deltaX);
-      const newTop = Math.max(0, window.innerHeight - startBottom - this.controllerEl!.offsetHeight + deltaY);
+      const newLeft = Math.max(0, ownerWindow.innerWidth - startRight - controllerEl.offsetWidth + deltaX);
+      const newTop = Math.max(0, ownerWindow.innerHeight - startBottom - controllerEl.offsetHeight + deltaY);
 
-      this.controllerEl!.style.left = `${newLeft}px`;
-      this.controllerEl!.style.top = `${newTop}px`;
+      controllerEl.setCssStyles({
+        left: `${newLeft}px`,
+        top: `${newTop}px`,
+      });
     };
 
     const onMouseUp = () => {
       if (!isDragging) return;
       isDragging = false;
-      this.controllerEl?.classList.remove("is-dragging");
+      controllerEl.classList.remove("is-dragging");
     };
 
     header.addEventListener("mousedown", onMouseDown);
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
+    ownerDocument.addEventListener("mousemove", onMouseMove);
+    ownerDocument.addEventListener("mouseup", onMouseUp);
   }
 
   // 隐藏控制器（停止朗读并隐藏）
@@ -919,10 +923,10 @@ export default class OpenReaderPlugin extends Plugin {
     // 更新进度条
     if (this.progressBarEl && this.progressTextEl && chunk !== undefined && total !== undefined) {
       const percent = total > 0 ? (chunk / total) * 100 : 0;
-      this.progressBarEl.style.width = `${percent}%`;
+      this.progressBarEl.setCssStyles({ width: `${percent}%` });
       this.progressTextEl.textContent = `${chunk}/${total}`;
     } else if (this.progressBarEl && this.progressTextEl) {
-      this.progressBarEl.style.width = "0%";
+      this.progressBarEl.setCssStyles({ width: "0%" });
       this.progressTextEl.textContent = "";
     }
 
@@ -1001,10 +1005,14 @@ class OpenReaderSettingTab extends PluginSettingTab {
     containerEl.empty();
     containerEl.addClass("open-reader-settings");
 
-    containerEl.createEl("h2", { text: "Open Reader 语音朗读" });
+    new Setting(containerEl)
+      .setName("Open Reader 语音朗读")
+      .setHeading();
 
     // === TTS 服务配置 ===
-    containerEl.createEl("h3", { text: "TTS 服务", cls: "open-reader-settings-section" });
+    new Setting(containerEl)
+      .setName("TTS 服务")
+      .setHeading();
 
     new Setting(containerEl)
       .setName("当前识别系统名")
@@ -1061,10 +1069,12 @@ class OpenReaderSettingTab extends PluginSettingTab {
             this.plugin.settings.speed = clampNumber(value, 0.5, 2);
             await this.plugin.saveSettings();
           }),
-      );
+    );
 
     // === 文本处理配置 ===
-    containerEl.createEl("h3", { text: "文本处理", cls: "open-reader-settings-section" });
+    new Setting(containerEl)
+      .setName("文本处理")
+      .setHeading();
 
     new Setting(containerEl)
       .setName("输出文件夹")
@@ -1114,10 +1124,12 @@ class OpenReaderSettingTab extends PluginSettingTab {
             this.plugin.settings.skipCodeBlocks = value;
             await this.plugin.saveSettings();
           }),
-      );
+    );
 
     // === 文本过滤配置 ===
-    containerEl.createEl("h3", { text: "文本过滤", cls: "open-reader-settings-section" });
+    new Setting(containerEl)
+      .setName("文本过滤")
+      .setHeading();
 
     new Setting(containerEl)
       .setName("过滤残留 HTML 标签")
@@ -1154,10 +1166,12 @@ class OpenReaderSettingTab extends PluginSettingTab {
             this.plugin.settings.customCharsToFilter = value;
             await this.plugin.saveSettings();
           }),
-      );
+    );
 
     // === 其他配置 ===
-    containerEl.createEl("h3", { text: "其他", cls: "open-reader-settings-section" });
+    new Setting(containerEl)
+      .setName("其他")
+      .setHeading();
 
     new Setting(containerEl)
       .setName("保留生成的音频文件")
@@ -1314,13 +1328,7 @@ async function ensureVaultFolder(app: App, folderPath: string) {
 }
 
 function toNativePath(basePath: string, vaultPath: string): string {
-  const path = require("path") as typeof import("path");
   return path.join(basePath, vaultPath);
-}
-
-function pathToFileUrl(filePath: string): string {
-  const url = require("url") as typeof import("url");
-  return url.pathToFileURL(filePath).toString();
 }
 
 function formatTimestamp(date: Date): string {
@@ -1352,9 +1360,6 @@ async function synthesizeWithTtsctl(options: {
   outputPath: string;
   speed: number;
 }): Promise<void> {
-  const childProcess = require("child_process") as typeof import("child_process");
-  const path = require("path") as typeof import("path");
-  const fs = require("fs") as typeof import("fs");
   const command = options.ttsctlPath.trim();
   if (!command) throw new Error("Local TTS CLI path is empty.");
 
@@ -1405,15 +1410,10 @@ async function synthesizeWithTtsctl(options: {
 }
 
 async function removeFiles(paths: string[]) {
-  const fs = require("fs") as typeof import("fs");
   await Promise.all(paths.map((path) => fs.promises.rm(path, { force: true })));
 }
 
 async function openPath(targetPath: string): Promise<void> {
-  const childProcess = require("child_process") as typeof import("child_process");
-  const path = require("path") as typeof import("path");
-  const fs = require("fs") as typeof import("fs");
-
   // 检查目标是否为文件夹
   const stats = await fs.promises.stat(targetPath);
   const isDirectory = stats.isDirectory();
