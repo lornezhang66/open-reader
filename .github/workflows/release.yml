@@ -29,12 +29,7 @@ jobs:
             styles.css
       - uses: softprops/action-gh-release@v2
         with:
-          body: |
-            Release for the Obsidian community plugin directory.
-
-            Changes:
-            - Remove redundant directory context from the plugin description.
-            - Publish release assets with GitHub artifact attestations.
+          generate_release_notes: true
           files: |
             main.js
             manifest.json

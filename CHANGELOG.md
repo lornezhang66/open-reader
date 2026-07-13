@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 - 2026-07-14
 
 - Added confirmed one-click Local TTS installation on macOS and Windows.
 - Replaced synced machine/path mappings with fixed per-device application directories.
