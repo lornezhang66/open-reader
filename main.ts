@@ -11,6 +11,7 @@ import {
 } from "obsidian";
 import * as childProcess from "child_process";
 import * as fs from "fs";
+import * as https from "https";
 import * as os from "os";
 import * as path from "path";
 
@@ -18,10 +19,10 @@ type PlaybackState = "idle" | "loading" | "playing" | "paused" | "stopped";
 
 type MarkdownViewWithSelectedFiles = MarkdownView & { selectedFiles?: TFile[] };
 type AppWithSettings = App & { setting?: { openTabById?: (id: string) => void } };
+const LOCAL_TTS_VERSION = "4981e3549ade90d487df2aa4e106becdf2e92634";
 
 interface OpenReaderSettings {
   ttsctlPath?: string;
-  ttsctlPathsBySystem: string;
   outputFolder: string;
   speed: number;
   playbackSpeed: number; // 播放速度（HTMLAudio.playbackRate），独立于合成速度 speed
@@ -39,32 +40,15 @@ interface OpenReaderSettings {
   filterExtraWhitespace: boolean;
 }
 
-const WINDOWS_TTSCTL_PATH = "C:\\Users\\18660\\work_space_ai\\07codex_default\\local-tts-service\\ttsctl.ps1";
-const MAC_TTSCTL_PATH = "/Users/lorne/work_space_ai/codex-defaute/local-tts-service/ttsctl.sh";
-
-function defaultTtsctlPathsBySystem(): string {
-  return [
-    `lorne=${MAC_TTSCTL_PATH}`,
-    `zhangxiaolong=${WINDOWS_TTSCTL_PATH}`,
-  ].join("\n");
-}
-
-function fallbackTtsctlPath(): string {
-  if (Platform.isWin) return WINDOWS_TTSCTL_PATH;
-  if (Platform.isMacOS) return MAC_TTSCTL_PATH;
-  return "ttsctl";
-}
-
-function getDefaultTtsctlPath(): string {
-  return Platform.isWin ? WINDOWS_TTSCTL_PATH : MAC_TTSCTL_PATH;
-}
-
 function defaultTtsctlCandidates(): string[] {
-  return [
-    getDefaultTtsctlPath(),
-    WINDOWS_TTSCTL_PATH,
-    MAC_TTSCTL_PATH,
-  ];
+  if (Platform.isMacOS) {
+    return [path.join(os.homedir(), "Library", "Application Support", "LocalTTS", "local-tts-service", "ttsctl.sh")];
+  }
+  if (Platform.isWin) {
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    return [path.join(localAppData, "LocalTTS", "local-tts-service", "ttsctl.ps1")];
+  }
+  return [path.join(os.homedir(), ".local", "share", "local-tts-service", "ttsctl.sh")];
 }
 
 function fileExists(filePath: string): boolean {
@@ -75,26 +59,7 @@ function fileExists(filePath: string): boolean {
   }
 }
 
-function parseTtsctlPathsBySystem(value: string): Map<string, string> {
-  const result = new Map<string, string>();
-  for (const line of value.split(/\r?\n/)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const separator = trimmed.indexOf("=");
-    if (separator <= 0) continue;
-    const name = trimmed.slice(0, separator).trim();
-    const path = trimmed.slice(separator + 1).trim();
-    if (name && path) result.set(name, path);
-  }
-  return result;
-}
-
-function formatTtsctlPathsBySystem(paths: Map<string, string>): string {
-  return Array.from(paths.entries()).map(([name, path]) => `${name}=${path}`).join("\n");
-}
-
 const DEFAULT_SETTINGS: OpenReaderSettings = {
-  ttsctlPathsBySystem: defaultTtsctlPathsBySystem(),
   outputFolder: ".open-reader/audio",
   speed: 1,
   playbackSpeed: 1,
@@ -252,88 +217,17 @@ export default class OpenReaderPlugin extends Plugin {
   async loadSettings() {
     const stored = await this.loadData();
     this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
-    this.migrateLegacyTtsctlPath(stored);
     this.removeLegacySharedFields();
-    if (this.setDetectedTtsctlPath()) {
-      await this.saveSettings();
-    }
-  }
-
-  private migrateLegacyTtsctlPath(stored: Partial<OpenReaderSettings> | null) {
-    const previous = stored as Partial<OpenReaderSettings> & {
-      windowsTtsctlPath?: string;
-      macTtsctlPath?: string;
-      linuxTtsctlPath?: string;
-    } | null;
-    this.addTtsctlPathForSystem("zhangxiaolong", previous?.windowsTtsctlPath);
-    this.addTtsctlPathForSystem("lorne", previous?.macTtsctlPath);
-    this.addTtsctlPathForSystem("linux", previous?.linuxTtsctlPath);
-
-    const legacyPath = stored?.ttsctlPath?.trim();
-    if (!legacyPath) return;
-    if (legacyPath === WINDOWS_TTSCTL_PATH) return;
-    if (legacyPath === MAC_TTSCTL_PATH) return;
-    this.addTtsctlPathForSystem(this.getSystemName(), legacyPath);
-  }
-
-  private addTtsctlPathForSystem(systemName: string, path?: string) {
-    const nextPath = path?.trim();
-    if (!nextPath) return;
-    const paths = parseTtsctlPathsBySystem(this.settings.ttsctlPathsBySystem);
-    if (paths.get(systemName) === nextPath) return;
-    paths.set(systemName, nextPath);
-    this.settings.ttsctlPathsBySystem = formatTtsctlPathsBySystem(paths);
   }
 
   private getTtsctlPath(): string {
-    const paths = parseTtsctlPathsBySystem(this.settings.ttsctlPathsBySystem);
-    for (const name of this.getSystemNames()) {
-      const path = paths.get(name);
-      if (path && fileExists(path)) return path;
-    }
-    return this.detectTtsctlPath() || fallbackTtsctlPath();
+    const detected = this.detectTtsctlPath();
+    if (!detected) throw new Error("Local TTS is not installed. Open settings to install it.");
+    return detected;
   }
 
-  setDetectedTtsctlPath(): boolean {
-    const path = this.detectTtsctlPath();
-    if (!path) return false;
-    const before = this.settings.ttsctlPathsBySystem;
-    this.addTtsctlPathForSystem(this.getSystemName(), path);
-    return before !== this.settings.ttsctlPathsBySystem;
-  }
-
-  private detectTtsctlPath(): string | null {
-    const paths = parseTtsctlPathsBySystem(this.settings.ttsctlPathsBySystem);
-    const candidates = [
-      ...this.getSystemNames().map((name) => paths.get(name)),
-      ...Array.from(paths.values()),
-      ...defaultTtsctlCandidates(),
-    ];
-    return candidates.find((path): path is string => Boolean(path && fileExists(path))) || null;
-  }
-
-  getSystemName(): string {
-    return this.getSystemNames()[0] || (Platform.isMacOS ? "lorne" : "zhangxiaolong");
-  }
-
-  getSystemNames(): string[] {
-    const names = new Set<string>();
-    const add = (value?: string) => {
-      const name = value?.trim();
-      if (name) names.add(name);
-    };
-    try {
-      add(os.userInfo().username);
-      add(os.hostname());
-      add(os.hostname().replace(/\.local$/i, ""));
-    } catch {
-      // Obsidian desktop normally has Node available; keep a deterministic fallback.
-    }
-    add(process.env.COMPUTERNAME);
-    add(process.env.USERNAME);
-    add(process.env.USER);
-    add(Platform.isMacOS ? "lorne" : "zhangxiaolong");
-    return Array.from(names);
+  detectTtsctlPath(): string | null {
+    return defaultTtsctlCandidates().find(fileExists) || null;
   }
 
   private removeLegacySharedFields() {
@@ -342,16 +236,53 @@ export default class OpenReaderPlugin extends Plugin {
       windowsTtsctlPath?: string;
       macTtsctlPath?: string;
       linuxTtsctlPath?: string;
+      ttsctlPathsBySystem?: string;
     };
     delete settings.systemName;
     delete settings.ttsctlPath;
     delete settings.windowsTtsctlPath;
     delete settings.macTtsctlPath;
     delete settings.linuxTtsctlPath;
+    delete settings.ttsctlPathsBySystem;
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
+  }
+
+  async installLocalTts(): Promise<void> {
+    if (!Platform.isMacOS && !Platform.isWin) {
+      new Notice("Open Reader: one-click Local TTS installation currently supports macOS and Windows.");
+      return;
+    }
+    const approved = window.confirm(
+      "Open Reader will download Local TTS from github.com/lornezhang66/local-tts-service, install Python dependencies, and download the local speech model (about 1.5 GB). Continue?",
+    );
+    if (!approved) return;
+
+    const extension = Platform.isWin ? "ps1" : "sh";
+    const scriptName = Platform.isWin ? "install_windows_user.ps1" : "install_macos_user.sh";
+    const installerPath = path.join(os.tmpdir(), `open-reader-local-tts-installer.${extension}`);
+    const url = `https://raw.githubusercontent.com/lornezhang66/local-tts-service/${LOCAL_TTS_VERSION}/scripts/${scriptName}`;
+    const installEnv = { ...process.env, LOCAL_TTS_INSTALL_REF: LOCAL_TTS_VERSION };
+
+    const progress = new Notice("Open Reader: downloading and installing Local TTS. This may take several minutes.", 0);
+    try {
+      await downloadFile(url, installerPath);
+      if (Platform.isWin) {
+        await runCommand("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-File", installerPath], installEnv);
+      } else {
+        await runCommand("/bin/bash", [installerPath], installEnv);
+      }
+      if (!this.detectTtsctlPath()) throw new Error("installer finished but ttsctl was not found");
+      new Notice("Open Reader: Local TTS installed successfully.");
+    } catch (error) {
+      new Notice(`Open Reader: Local TTS installation failed: ${getErrorMessage(error)}`, 10000);
+      console.error("Local TTS installation failed", error);
+    } finally {
+      progress.hide();
+      await fs.promises.rm(installerPath, { force: true });
+    }
   }
 
   async readActiveDocument() {
@@ -1015,47 +946,23 @@ class OpenReaderSettingTab extends PluginSettingTab {
       .setHeading();
 
     new Setting(containerEl)
-      .setName("当前识别系统名")
-      .setDesc("此值不写入共享配置，来自当前电脑的用户名、主机名等候选名。")
-      .addText((text) => {
-        text.setValue(this.plugin.getSystemNames().join(", "));
-        text.inputEl.disabled = true;
-      });
-
-    new Setting(containerEl)
-      .setName("TTS CLI 路径映射")
-      .setDesc("一行一个：系统名=ttsctl 路径。共享 vault 时，Mac 和 Windows 各自按系统名选择。")
+      .setName("本地语音引擎")
+      .setDesc(this.plugin.detectTtsctlPath() ? "已安装。Mac 与 Windows 各自使用本机安装，不同步绝对路径。" : "未安装。模型约 1.5 GB，文字和语音均保留在本机。")
       .addButton((button) =>
         button
-          .setButtonText("自动识别")
+          .setButtonText(this.plugin.detectTtsctlPath() ? "重新检测" : "一键安装")
           .onClick(async () => {
-            if (!this.plugin.setDetectedTtsctlPath()) {
-              new Notice("未发现本机 ttsctl，请安装 local-tts-service。");
-              return;
-            }
-            await this.plugin.saveSettings();
-            new Notice("已识别本机 ttsctl 路径。");
+            if (!this.plugin.detectTtsctlPath()) await this.plugin.installLocalTts();
             this.display();
           }),
       )
       .addButton((button) =>
         button
-          .setButtonText("安装指南")
+          .setButtonText("项目说明")
           .onClick(() => {
             window.open("https://github.com/lornezhang66/local-tts-service#cli");
           }),
-      )
-      .addTextArea((text) => {
-        text
-          .setPlaceholder(DEFAULT_SETTINGS.ttsctlPathsBySystem)
-          .setValue(this.plugin.settings.ttsctlPathsBySystem)
-          .onChange(async (value) => {
-            this.plugin.settings.ttsctlPathsBySystem = value.trim() || DEFAULT_SETTINGS.ttsctlPathsBySystem;
-            await this.plugin.saveSettings();
-          });
-        text.inputEl.rows = 4;
-        text.inputEl.cols = 64;
-      });
+      );
 
     new Setting(containerEl)
       .setName("语速")
@@ -1411,6 +1318,45 @@ async function synthesizeWithTtsctl(options: {
 
 async function removeFiles(paths: string[]) {
   await Promise.all(paths.map((path) => fs.promises.rm(path, { force: true })));
+}
+
+function runCommand(command: string, args: string[], env?: NodeJS.ProcessEnv): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = childProcess.spawn(command, args, { env, windowsHide: true, stdio: ["ignore", "ignore", "pipe"] });
+    let stderr = "";
+    child.stderr?.on("data", (data: Buffer) => {
+      stderr = `${stderr}${data.toString()}`.slice(-4000);
+    });
+    child.on("error", reject);
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(stderr.trim() || `${command} exited with code ${code}`));
+    });
+  });
+}
+
+function downloadFile(url: string, destination: string, redirects = 0): Promise<void> {
+  if (redirects > 5) return Promise.reject(new Error("too many download redirects"));
+  return new Promise((resolve, reject) => {
+    const request = https.get(url, { headers: { "User-Agent": "Open-Reader" } }, (response) => {
+      const location = response.headers.location;
+      if (location && response.statusCode && response.statusCode >= 300 && response.statusCode < 400) {
+        response.resume();
+        downloadFile(new URL(location, url).toString(), destination, redirects + 1).then(resolve, reject);
+        return;
+      }
+      if (response.statusCode !== 200) {
+        response.resume();
+        reject(new Error(`download failed with HTTP ${response.statusCode}`));
+        return;
+      }
+      const file = fs.createWriteStream(destination);
+      response.pipe(file);
+      file.on("finish", () => file.close(() => resolve()));
+      file.on("error", reject);
+    });
+    request.on("error", reject);
+  });
 }
 
 async function openPath(targetPath: string): Promise<void> {

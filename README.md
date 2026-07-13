@@ -4,7 +4,7 @@ Open Reader is an **Obsidian local TTS plugin** that reads selected text or acti
 
 Keywords: Obsidian TTS plugin, local text-to-speech, Markdown reader, offline TTS, note narration, `ttsctl`, macOS TTS, Windows TTS.
 
-The plugin is intentionally local-first: Obsidian extracts and cleans Markdown text, splits long notes into manageable chunks, calls `ttsctl say <text> --output <wav> --speed <number>`, then plays the generated wav files inside Obsidian.
+The plugin is intentionally local-first: Obsidian extracts and cleans Markdown text, splits long notes into manageable chunks, calls `ttsctl say <text> --output <wav> --speed <number>`, then plays the generated wav files inside Obsidian. `ttsctl` starts a localhost daemon on demand so the speech model is reused between chunks and agent hooks.
 
 ## Features
 
@@ -31,15 +31,7 @@ The configured CLI must support this command shape:
 ttsctl say <text> --output <wav-path> --speed <number>
 ```
 
-Default settings store CLI paths by system name so the same Obsidian vault can be shared between macOS and Windows:
-
-```text
-lorne=/Users/lorne/work_space_ai/codex-defaute/local-tts-service/ttsctl.sh
-zhangxiaolong=C:\Users\18660\work_space_ai\07codex_default\local-tts-service\ttsctl.ps1
-```
-
-That `ttsctl` entrypoint uses the local `local-tts-service` repository and can synthesize offline without starting the HTTP service.
-The settings page can auto-detect an existing `ttsctl` path for the current machine and links to the `local-tts-service` install guide.
+Open Reader detects Local TTS in a fixed per-user application directory on each computer. Absolute paths are not stored in the synced vault, so the same vault can be shared between macOS and Windows. If Local TTS is missing, the settings page offers a confirmed one-click installation; the model download is about 1.5 GB.
 
 ## Installation
 
@@ -53,6 +45,7 @@ The settings page can auto-detect an existing `ttsctl` path for the current mach
 3. Put the downloaded files into that folder.
 4. Restart Obsidian or reload community plugins.
 5. Enable **Open Reader** in community plugin settings.
+6. Open Open Reader settings and choose **Install** if the local speech engine is not already present.
 
 ## Commands
 
@@ -78,8 +71,7 @@ If Obsidian or Electron blocks automatic playback after local synthesis, click `
 
 ## Settings
 
-- `Current detected system name`: read-only OS username, not saved into the shared vault config.
-- `TTS CLI path map`: one `system-name=ttsctl-path` entry per line. The plugin chooses the matching path at runtime and can auto-detect existing installs.
+- `Local speech engine`: shows whether Local TTS is installed on this computer and provides one-click installation when needed.
 - `Output folder`: vault-relative folder for generated wav files. Default: `.open-reader/audio`.
 - `Speed`: speech speed passed to the local CLI. Recommended range: `0.5` to `2`.
 - `Max chunk characters`: chunk size used before calling the CLI.

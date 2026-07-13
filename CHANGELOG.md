@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Added macOS default `ttsctl.sh` path for the local TTS CLI.
-- Added system-name based TTS CLI path settings for shared macOS / Windows Obsidian vaults.
-- Added TTS CLI auto-detection and a `local-tts-service` install guide link from settings.
+- Added confirmed one-click Local TTS installation on macOS and Windows.
+- Replaced synced machine/path mappings with fixed per-device application directories.
+- Reused the on-demand Local TTS daemon across note chunks and agent hooks.
 - Aligned Markdown speech cleanup with the agent hook: skip Markdown links, file references, tables, and non-text code fences while preserving `text` / `txt` / `plain` fences.
 
 ## 1.0.1 - 2026-07-03
