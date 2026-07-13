@@ -4,7 +4,7 @@ Open Reader is an **Obsidian local TTS plugin** that reads selected text or acti
 
 Keywords: Obsidian TTS plugin, local text-to-speech, Markdown reader, offline TTS, note narration, `ttsctl`, macOS TTS, Windows TTS.
 
-The plugin is intentionally local-first: Obsidian extracts and cleans Markdown text, splits long notes into manageable chunks, calls `ttsctl say <text> --output <wav> --speed <number>`, then plays the generated wav files inside Obsidian. `ttsctl` starts a localhost daemon on demand so the speech model is reused between chunks and agent hooks.
+The plugin is intentionally local-first: Obsidian extracts and cleans Markdown text, starts the Local TTS daemon through `ttsctl` when needed, sends chunks to `http://127.0.0.1:51273`, then plays the generated wav files inside Obsidian. Older Local TTS versions automatically fall back to the `ttsctl say` contract.
 
 ## Features
 
@@ -23,9 +23,9 @@ The plugin is intentionally local-first: Obsidian extracts and cleans Markdown t
 - Clean common Markdown syntax before narration, including headings, links, embeds, wikilinks, blockquotes, list markers, emphasis, inline code, tables, and file references.
 - Desktop-only by design, because local CLI execution requires the Obsidian desktop runtime.
 
-## Local TTS CLI Contract
+## Local TTS Contract
 
-The configured CLI must support this command shape:
+The preferred protocol is Local TTS HTTP protocol 1. The CLI remains the installer, daemon launcher, and compatibility fallback:
 
 ```text
 ttsctl say <text> --output <wav-path> --speed <number>

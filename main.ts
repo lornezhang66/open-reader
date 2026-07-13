@@ -12,6 +12,7 @@ import {
 import * as childProcess from "child_process";
 import * as fs from "fs";
 import * as https from "https";
+import * as http from "http";
 import * as os from "os";
 import * as path from "path";
 
@@ -19,7 +20,8 @@ type PlaybackState = "idle" | "loading" | "playing" | "paused" | "stopped";
 
 type MarkdownViewWithSelectedFiles = MarkdownView & { selectedFiles?: TFile[] };
 type AppWithSettings = App & { setting?: { openTabById?: (id: string) => void } };
-const LOCAL_TTS_VERSION = "4981e3549ade90d487df2aa4e106becdf2e92634";
+const LOCAL_TTS_VERSION = "bf64b65480b49265473efdd97d5694ccdf9d155c";
+const LOCAL_TTS_URL = "http://127.0.0.1:51273";
 
 interface OpenReaderSettings {
   ttsctlPath?: string;
@@ -329,18 +331,30 @@ export default class OpenReaderPlugin extends Plugin {
 
     try {
       await this.ensureOutputFolder();
+      const ttsctlPath = this.getTtsctlPath();
+      let useHttp = await ensureHttpTts(ttsctlPath);
 
       for (let index = 0; index < chunks.length; index += 1) {
         if (this.shouldStop) break;
 
         this.updateStatus("loading", index + 1, chunks.length);
         const outputPath = this.getChunkOutputPath(adapter, index + 1);
-        await synthesizeWithTtsctl({
-          ttsctlPath: this.getTtsctlPath(),
+        const options = {
           text: chunks[index],
           outputPath,
           speed: clampNumber(this.settings.speed, 0.5, 2),
-        });
+        };
+        if (useHttp) {
+          try {
+            await synthesizeWithHttp(options);
+          } catch (error) {
+            console.warn("Local TTS HTTP failed; falling back to ttsctl", error);
+            useHttp = false;
+            await synthesizeWithTtsctl({ ttsctlPath, ...options });
+          }
+        } else {
+          await synthesizeWithTtsctl({ ttsctlPath, ...options });
+        }
         this.generatedFiles.push(outputPath);
 
         if (this.shouldStop) break;
@@ -445,13 +459,22 @@ export default class OpenReaderPlugin extends Plugin {
     try {
       await this.ensureOutputFolder();
       const outputPath = this.getNamedOutputPath(adapter, "ttsctl-test.wav");
-      await synthesizeWithTtsctl({
-        ttsctlPath: this.getTtsctlPath(),
+      const ttsctlPath = this.getTtsctlPath();
+      const options = {
         text: "Obsidian 本地朗读插件测试成功。",
         outputPath,
         speed: clampNumber(this.settings.speed, 0.5, 2),
-      });
-      new Notice(`Open Reader: local TTS CLI test passed.`);
+      };
+      if (await ensureHttpTts(ttsctlPath)) {
+        try {
+          await synthesizeWithHttp(options);
+        } catch {
+          await synthesizeWithTtsctl({ ttsctlPath, ...options });
+        }
+      } else {
+        await synthesizeWithTtsctl({ ttsctlPath, ...options });
+      }
+      new Notice(`Open Reader: local TTS test passed.`);
       this.showController();
       try {
         await this.playAudioFile(outputPath, () => {
@@ -467,8 +490,8 @@ export default class OpenReaderPlugin extends Plugin {
         }
       }
     } catch (error) {
-      new Notice(`Open Reader CLI test failed: ${getErrorMessage(error)}`);
-      console.error("Open Reader CLI test failed", error);
+      new Notice(`Open Reader TTS test failed: ${getErrorMessage(error)}`);
+      console.error("Open Reader TTS test failed", error);
     }
   }
 
@@ -1267,11 +1290,74 @@ async function synthesizeWithTtsctl(options: {
   outputPath: string;
   speed: number;
 }): Promise<void> {
-  const command = options.ttsctlPath.trim();
-  if (!command) throw new Error("Local TTS CLI path is empty.");
+  await runTtsctlCommand(options.ttsctlPath, [
+    "say", options.text, "--output", options.outputPath, "--speed", String(options.speed),
+  ]);
+  const stat = await fs.promises.stat(options.outputPath);
+  if (stat.size === 0) throw new Error("Local TTS CLI generated an empty audio file.");
+}
 
-  await new Promise<void>((resolve, reject) => {
-    const extension = path.extname(command).toLowerCase();
+async function ensureHttpTts(ttsctlPath: string): Promise<boolean> {
+  if (await supportsHttpProtocol()) return true;
+  try {
+    await runTtsctlCommand(ttsctlPath, ["ensure"]);
+  } catch (error) {
+    console.warn("Unable to start Local TTS daemon; using CLI compatibility mode", error);
+    return false;
+  }
+  return supportsHttpProtocol();
+}
+
+async function supportsHttpProtocol(): Promise<boolean> {
+  try {
+    const health = await requestHttp("GET", "/api/health", undefined, 3000);
+    return JSON.parse(health.toString("utf8")).protocol === 1;
+  } catch {
+    return false;
+  }
+}
+
+async function synthesizeWithHttp(options: {
+  text: string;
+  outputPath: string;
+  speed: number;
+}): Promise<void> {
+  const wav = await requestHttp(
+    "POST",
+    "/api/synthesize",
+    Buffer.from(JSON.stringify({ text: options.text, speed: options.speed })),
+    120000,
+  );
+  if (!wav.length) throw new Error("Local TTS HTTP returned empty audio.");
+  await fs.promises.writeFile(options.outputPath, wav);
+}
+
+function requestHttp(method: string, requestPath: string, body?: Buffer, timeout = 3000): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const request = http.request(`${LOCAL_TTS_URL}${requestPath}`, {
+      method,
+      headers: body ? { "Content-Type": "application/json", "Content-Length": String(body.length) } : undefined,
+    }, (response) => {
+      const chunks: Buffer[] = [];
+      response.on("data", (chunk: Buffer) => chunks.push(chunk));
+      response.on("end", () => {
+        const result = Buffer.concat(chunks);
+        if (response.statusCode && response.statusCode >= 200 && response.statusCode < 300) resolve(result);
+        else reject(new Error(`Local TTS HTTP ${response.statusCode}: ${result.toString("utf8").slice(0, 500)}`));
+      });
+    });
+    request.setTimeout(timeout, () => request.destroy(new Error("Local TTS HTTP request timed out")));
+    request.on("error", reject);
+    if (body) request.write(body);
+    request.end();
+  });
+}
+
+function runTtsctlCommand(command: string, args: string[]): Promise<void> {
+  const trimmed = command.trim();
+  if (!trimmed) return Promise.reject(new Error("Local TTS CLI path is empty."));
+  return new Promise((resolve, reject) => {
+    const extension = path.extname(trimmed).toLowerCase();
     const child =
       Platform.isWin && extension === ".ps1"
         ? childProcess.spawn("powershell.exe", [
@@ -1279,22 +1365,10 @@ async function synthesizeWithTtsctl(options: {
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            command,
-            "say",
-            options.text,
-            "--output",
-            options.outputPath,
-            "--speed",
-            String(options.speed),
+            trimmed,
+            ...args,
           ], { windowsHide: true })
-        : childProcess.spawn(command, [
-            "say",
-            options.text,
-            "--output",
-            options.outputPath,
-            "--speed",
-            String(options.speed),
-          ], { windowsHide: true });
+        : childProcess.spawn(trimmed, args, { windowsHide: true });
 
     let stderr = "";
     child.stderr?.on("data", (data: Buffer) => {
@@ -1309,11 +1383,6 @@ async function synthesizeWithTtsctl(options: {
       reject(new Error(stderr.trim() || `Local TTS CLI exited with code ${code}.`));
     });
   });
-
-  const stat = await fs.promises.stat(options.outputPath);
-  if (stat.size === 0) {
-    throw new Error("Local TTS CLI generated an empty audio file.");
-  }
 }
 
 async function removeFiles(paths: string[]) {
