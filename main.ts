@@ -2,6 +2,7 @@ import {
   App,
   FileSystemAdapter,
   MarkdownView,
+  Modal,
   Notice,
   Plugin,
   PluginSettingTab,
@@ -20,7 +21,7 @@ type PlaybackState = "idle" | "loading" | "playing" | "paused" | "stopped";
 
 type MarkdownViewWithSelectedFiles = MarkdownView & { selectedFiles?: TFile[] };
 type AppWithSettings = App & { setting?: { openTabById?: (id: string) => void } };
-const LOCAL_TTS_VERSION = "bf64b65480b49265473efdd97d5694ccdf9d155c";
+const LOCAL_TTS_VERSION = "ab0fccc1ced69958c523ddf788c93796829022de";
 const LOCAL_TTS_URL = "http://127.0.0.1:51273";
 
 interface OpenReaderSettings {
@@ -153,7 +154,7 @@ export default class OpenReaderPlugin extends Plugin {
 
     this.addCommand({
       id: "test-local-tts-cli",
-      name: "Test local TTS CLI",
+      name: "Test Local TTS CLI",
       callback: () => {
         void this.testLocalTtsCli();
       },
@@ -201,7 +202,6 @@ export default class OpenReaderPlugin extends Plugin {
       // 没在播放或已无目标文件时无需处理
       if (!this.activeFilePath) return;
       if (!this.isSourceFileStillOpen()) {
-        console.log("Open Reader: source file closed, stopping playback");
         this.stopReading(true);
       }
     };
@@ -217,8 +217,8 @@ export default class OpenReaderPlugin extends Plugin {
   }
 
   async loadSettings() {
-    const stored = await this.loadData();
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, stored);
+    const stored: unknown = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, isRecord(stored) ? stored : {});
     this.removeLegacySharedFields();
   }
 
@@ -257,8 +257,10 @@ export default class OpenReaderPlugin extends Plugin {
       new Notice("Open Reader: one-click Local TTS installation currently supports macOS and Windows.");
       return;
     }
-    const approved = window.confirm(
-      "Open Reader will download Local TTS from github.com/lornezhang66/local-tts-service, install Python dependencies, and download the local speech model (about 1.5 GB). Continue?",
+    const approved = await confirmAction(
+      this.app,
+      "Install Local TTS?",
+      "Open Reader will download Local TTS from github.com/lornezhang66/local-tts-service, install Python dependencies, and download about 130 MB of speech models. Continue?",
     );
     if (!approved) return;
 
@@ -289,7 +291,7 @@ export default class OpenReaderPlugin extends Plugin {
 
   async readActiveDocument() {
     if (!Platform.isDesktopApp) {
-      new Notice("Open Reader: local TTS CLI is only supported on desktop.");
+      new Notice("Open Reader: Local TTS CLI is only supported on desktop.");
       return;
     }
 
@@ -449,7 +451,7 @@ export default class OpenReaderPlugin extends Plugin {
 
   async testLocalTtsCli() {
     if (!Platform.isDesktopApp) {
-      new Notice("Open Reader: local TTS CLI is only supported on desktop.");
+      new Notice("Open Reader: Local TTS CLI is only supported on desktop.");
       return;
     }
 
@@ -474,7 +476,7 @@ export default class OpenReaderPlugin extends Plugin {
       } else {
         await synthesizeWithTtsctl({ ttsctlPath, ...options });
       }
-      new Notice(`Open Reader: local TTS test passed.`);
+      new Notice(`Open Reader: Local TTS test passed.`);
       this.showController();
       try {
         await this.playAudioFile(outputPath, () => {
@@ -970,7 +972,7 @@ class OpenReaderSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("本地语音引擎")
-      .setDesc(this.plugin.detectTtsctlPath() ? "已安装。Mac 与 Windows 各自使用本机安装，不同步绝对路径。" : "未安装。模型约 1.5 GB，文字和语音均保留在本机。")
+      .setDesc(this.plugin.detectTtsctlPath() ? "已安装。Mac 与 Windows 各自使用本机安装，不同步绝对路径。" : "未安装。模型下载约 130 MB，文字和语音均保留在本机。")
       .addButton((button) =>
         button
           .setButtonText(this.plugin.detectTtsctlPath() ? "重新检测" : "一键安装")
@@ -1105,7 +1107,7 @@ class OpenReaderSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("保留生成的音频文件")
-      .setDesc("朗读结束后保留生成的 wav 文件，否则自动删除。")
+      .setDesc("朗读结束后保留生成的 WAV 文件，否则自动删除。")
       .addToggle((toggle) =>
         toggle
           .setValue(this.plugin.settings.keepAudioFiles)
@@ -1311,10 +1313,31 @@ async function ensureHttpTts(ttsctlPath: string): Promise<boolean> {
 async function supportsHttpProtocol(): Promise<boolean> {
   try {
     const health = await requestHttp("GET", "/api/health", undefined, 3000);
-    return JSON.parse(health.toString("utf8")).protocol === 1;
+    const data: unknown = JSON.parse(health.toString("utf8"));
+    return isRecord(data) && data.protocol === 1;
   } catch {
     return false;
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function confirmAction(app: App, title: string, message: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const modal = new Modal(app);
+    modal.titleEl.setText(title);
+    modal.contentEl.createEl("p", { text: message });
+    new Setting(modal.contentEl)
+      .addButton((button) => button.setButtonText("Cancel").onClick(() => modal.close()))
+      .addButton((button) => button.setButtonText("Install").setCta().onClick(() => {
+        resolve(true);
+        modal.close();
+      }));
+    modal.onClose = () => resolve(false);
+    modal.open();
+  });
 }
 
 async function synthesizeWithHttp(options: {

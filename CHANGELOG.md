@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.1 - 2026-07-14
+
+- Fixed first-time installation by downloading the official sherpa-onnx model archive instead of the unreliable Hugging Face snapshot path.
+- Cleared Obsidian source and CSS review warnings and replaced the browser confirmation dialog with an Obsidian modal.
+- Corrected the first-install download estimate to about 130 MB.
+
 ## 1.1.0 - 2026-07-14
 
 - Added confirmed one-click Local TTS installation on macOS and Windows.

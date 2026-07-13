@@ -1,11 +1,12 @@
 {
   "name": "open-reader",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Turn Markdown notes into private, natural offline speech.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
-    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production"
+    "build": "tsc -noEmit -skipLibCheck && node esbuild.config.mjs production",
+    "lint": "eslint ."
   },
   "keywords": [
     "obsidian",
@@ -23,7 +24,12 @@
   "devDependencies": {
     "@types/node": "^22.15.29",
     "esbuild": "^0.25.5",
+    "eslint": "^9.39.5",
+    "eslint-plugin-obsidianmd": "^0.4.1",
+    "globals": "^17.7.0",
+    "jiti": "^2.7.0",
     "obsidian": "^1.8.7",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.63.0"
   }
 }

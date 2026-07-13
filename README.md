@@ -16,7 +16,7 @@
 
 [试听声音对比](https://open-reader.pages.dev/#listen) · [免费下载试用](https://github.com/lornezhang66/open-reader/releases/latest) · [遇到问题，告诉我](https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml)
 
-> 目前仅支持桌面端 · 免费开源 · 首次安装本地语音模型约 1.5 GB
+> 目前仅支持桌面端 · 免费开源 · 首次下载本地语音模型约 130 MB
 
 ## Local TTS Contract
 
@@ -26,7 +26,7 @@ The preferred protocol is Local TTS HTTP protocol 1. The CLI remains the install
 ttsctl say <text> --output <wav-path> --speed <number>
 ```
 
-Open Reader detects Local TTS in a fixed per-user application directory on each computer. Absolute paths are not stored in the synced vault, so the same vault can be shared between macOS and Windows. If Local TTS is missing, the settings page offers a confirmed one-click installation; the model download is about 1.5 GB.
+Open Reader detects Local TTS in a fixed per-user application directory on each computer. Absolute paths are not stored in the synced vault, so the same vault can be shared between macOS and Windows. If Local TTS is missing, the settings page offers a confirmed one-click installation; the model download is about 130 MB.
 
 ## Installation
 
