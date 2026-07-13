@@ -14,7 +14,7 @@
 - **理解 Markdown** — 自动跳过链接、元数据、代码和格式符号。
 - **一键配置语音** — macOS、Windows 均可从插件设置安装本地引擎。
 
-[免费下载试用](https://github.com/lornezhang66/open-reader/releases/latest) · [遇到问题，告诉我](https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml)
+[试听声音对比](https://open-reader.pages.dev/#listen) · [免费下载试用](https://github.com/lornezhang66/open-reader/releases/latest) · [遇到问题，告诉我](https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml)
 
 > 目前仅支持桌面端 · 免费开源 · 首次安装本地语音模型约 1.5 GB
 

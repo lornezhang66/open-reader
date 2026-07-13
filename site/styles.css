@@ -31,6 +31,16 @@ article .reading { margin-left:-22px; padding:16px 22px; color:#1d1d1f; border-l
 .timeline { flex:1; height:4px; overflow:hidden; border-radius:4px; background:#dedee2; }
 .timeline i { display:block; width:58%; height:100%; background:var(--blue); }
 .player span { color:#6e6e73; font-size:12px; }
+.listen { max-width:980px; margin:0 auto 130px; padding:0 22px; text-align:center; }
+.listen h2 { margin:0; font-size:clamp(44px,6vw,72px); letter-spacing:-.055em; }
+.listen-intro { max-width:620px; margin:22px auto 48px; color:var(--muted); font-size:20px; line-height:1.5; }
+.samples { display:grid; grid-template-columns:1fr 1fr; gap:18px; text-align:left; }
+.sample { padding:30px; border-radius:24px; background:var(--surface); }
+.sample.featured { background:#edf6ff; }
+.sample span { display:block; margin-bottom:8px; color:var(--muted); font-size:13px; }
+.sample strong { display:block; margin-bottom:28px; font-size:22px; letter-spacing:-.025em; }
+.sample audio { display:block; width:100%; }
+.transcript { max-width:760px; margin:26px auto 0; color:#86868b; font-size:12px; line-height:1.6; }
 .facts { max-width:980px; margin:0 auto 130px; padding:70px 22px; display:grid; grid-template-columns:repeat(3,1fr); border-top:1px solid #d2d2d7; border-bottom:1px solid #d2d2d7; text-align:center; }
 .facts div { display:flex; flex-direction:column; gap:10px; }
 .facts strong { font-size:28px; letter-spacing:-.035em; }
@@ -48,6 +58,8 @@ footer a { color:#424245; }
   article { padding:56px 28px 135px; }
   article h2 { font-size:30px; }
   article p { font-size:17px; }
+  .samples { grid-template-columns:1fr; }
+  .sample { padding:24px; }
   .facts { grid-template-columns:1fr; gap:42px; margin-bottom:70px; }
   .story { padding:100px 22px; }
   footer { gap:20px; flex-direction:column; }
