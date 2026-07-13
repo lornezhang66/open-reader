@@ -3,55 +3,70 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Open Reader：免费、中文友好的 Obsidian 本地朗读插件，对 ADHD 和阅读注意力困难更友好。">
-  <title>Open Reader｜让 Obsidian 笔记开口说话</title>
+  <meta name="description" content="Open Reader：免费、中文友好的 Obsidian 本地朗读插件。无需 API Key，笔记不上传。">
+  <title>Open Reader｜让耳朵接着读</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <nav>
+    <a class="brand" href="#">Open Reader</a>
+    <div>
+      <a href="https://github.com/lornezhang66/open-reader">源码</a>
+      <a href="https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml">反馈</a>
+    </div>
+  </nav>
+
   <main>
-    <nav>
-      <a class="brand" href="#" aria-label="Open Reader 首页"><span>◉</span> Open Reader</a>
-      <a class="feedback" href="https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml">问题反馈</a>
-    </nav>
-
     <section class="hero">
-      <div class="copy">
-        <p class="eyebrow">免费 · 中文友好 · 完全本地</p>
-        <h1>注意力读不下去时，<br><em>让耳朵接着读。</em></h1>
-        <p class="lead">我有 ADHD。长时间盯着文字很容易失去注意力，但听觉能帮我重新进入内容。所以我做了 Open Reader：不用 API Key、不按字数付费的 Obsidian 中文朗读插件。</p>
-        <div class="actions">
-          <a class="primary" href="https://github.com/lornezhang66/open-reader/releases/latest">免费下载试用 <span>→</span></a>
-          <a class="secondary" href="https://github.com/lornezhang66/open-reader">查看源码</a>
-        </div>
-        <ul>
-          <li><strong>免费使用</strong><span>没有订阅和额度</span></li>
-          <li><strong>中文友好</strong><span>支持中英混读</span></li>
-          <li><strong>代替云端 TTS</strong><span>笔记内容不上传</span></li>
-        </ul>
-        <p class="note">目前仅支持桌面端 · 首次安装语音模型约 1.5 GB · 免费开源</p>
-      </div>
-
-      <div class="preview" aria-label="Open Reader 播放界面示意图">
-        <div class="window">
-          <div class="window-bar"><i></i><i></i><i></i><span>Obsidian</span></div>
-          <article>
-            <small>我的笔记 / 深度阅读.md</small>
-            <h2>真正记住一篇文章</h2>
-            <p>阅读不是把文字扫过去，而是让观点在不同场景中重新出现。</p>
-            <p class="active">当眼睛需要休息时，耳朵可以接着完成这次阅读。</p>
-            <p>当注意力从文字上滑走，换一种输入方式继续理解内容。</p>
-          </article>
-          <div class="player">
-            <button aria-label="上一段">‹</button>
-            <button class="play" aria-label="暂停">Ⅱ</button>
-            <button aria-label="下一段">›</button>
-            <div class="track"><span></span></div>
-            <b>1.0×</b>
-          </div>
-        </div>
-        <div class="privacy">✓ 正在本地生成语音</div>
+      <p class="kicker">Open Reader for Obsidian</p>
+      <h1>读不进去的时候，<br>让耳朵接着读。</h1>
+      <p class="intro">免费的本地中文朗读插件。无需 API Key，不按字数付费，笔记不会上传云端。</p>
+      <p class="adhd">为 ADHD 和容易阅读走神的人而做。</p>
+      <div class="actions">
+        <a class="button" href="https://github.com/lornezhang66/open-reader/releases/latest">免费下载</a>
+        <a class="more" href="https://github.com/lornezhang66/open-reader">进一步了解 <span>›</span></a>
       </div>
     </section>
+
+    <section class="product" aria-label="Open Reader 产品界面示意">
+      <div class="window">
+        <header>
+          <span class="dots">● ● ●</span>
+          <span>Obsidian</span>
+          <span></span>
+        </header>
+        <article>
+          <small>我的笔记 / 深度阅读.md</small>
+          <h2>注意力不是意志力</h2>
+          <p>有时眼睛停留在文字上，大脑却已经离开。换一种输入方式，内容可能重新变得清晰。</p>
+          <p class="reading">当文字读不进去时，让耳朵接着完成这次阅读。</p>
+          <p>Open Reader 会跳过 Markdown 符号、链接和代码，只朗读真正的内容。</p>
+        </article>
+        <div class="player">
+          <button aria-label="上一段">‹</button>
+          <button class="pause" aria-label="暂停">Ⅱ</button>
+          <button aria-label="下一段">›</button>
+          <div class="timeline"><i></i></div>
+          <span>1.0×</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="facts">
+      <div><strong>免费</strong><span>没有订阅和调用额度</span></div>
+      <div><strong>中文友好</strong><span>支持中文与中英混读</span></div>
+      <div><strong>完全本地</strong><span>不需要云端 TTS</span></div>
+    </section>
+
+    <section class="story">
+      <p>“我有 ADHD。长时间盯着文字很容易失去注意力，但听觉能帮我重新进入内容。这就是我做 Open Reader 的原因。”</p>
+      <span>— Open Reader 作者</span>
+    </section>
   </main>
+
+  <footer>
+    <span>目前仅支持桌面端 · 首次安装本地语音模型约 1.5 GB</span>
+    <a href="https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml">报告问题</a>
+  </footer>
 </body>
 </html>
