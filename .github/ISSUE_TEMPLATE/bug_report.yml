@@ -1,0 +1,35 @@
+name: Problem report
+description: Tell us what failed while installing or using Open Reader.
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for helping improve Open Reader. Do not include private note content.
+  - type: dropdown
+    id: system
+    attributes:
+      label: Operating system
+      options: [macOS, Windows, Linux]
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Open Reader and Obsidian versions
+      placeholder: Open Reader 1.0.7, Obsidian 1.x
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happened?
+      description: Include the step that failed and the exact error message if available.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect?
+    validations:
+      required: true

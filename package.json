@@ -1,7 +1,7 @@
 {
   "name": "open-reader",
   "version": "1.0.7",
-  "description": "Read Markdown notes aloud with a local offline text-to-speech CLI.",
+  "description": "Turn Markdown notes into private, natural offline speech.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",

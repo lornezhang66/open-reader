@@ -1,27 +1,19 @@
-# Open Reader - Obsidian Local TTS Plugin
+# Open Reader
 
-Open Reader is an **Obsidian local TTS plugin** that reads selected text or active Markdown notes aloud with a local `ttsctl` text-to-speech CLI. It is built for offline note reading, Markdown narration, local-first speech synthesis, and shared macOS / Windows Obsidian vaults.
+## 收藏的笔记，终于可以听完了
 
-Keywords: Obsidian TTS plugin, local text-to-speech, Markdown reader, offline TTS, note narration, `ttsctl`, macOS TTS, Windows TTS.
+选中一段文字，或者直接打开整篇笔记。Open Reader 会过滤 Markdown 符号，用自然语音在本地朗读。走路、通勤、眼睛需要休息时，你的笔记仍然可以继续输入大脑。
 
-The plugin is intentionally local-first: Obsidian extracts and cleans Markdown text, starts the Local TTS daemon through `ttsctl` when needed, sends chunks to `http://127.0.0.1:51273`, then plays the generated wav files inside Obsidian. Older Local TTS versions automatically fall back to the `ttsctl say` contract.
+**为什么值得试试：**
 
-## Features
+- **完全本地** — 笔记内容不上传，不需要云端账号。
+- **理解 Markdown** — 自动跳过链接、元数据、代码和格式符号。
+- **一键配置语音** — macOS、Windows 均可从插件设置安装本地引擎。
+- **为长笔记设计** — 支持分段、暂停、继续、调速和进度显示。
 
-- Obsidian desktop plugin for local text-to-speech and Markdown note narration.
-- Read selected text first; if nothing is selected, read the active Markdown note.
-- Use the local `ttsctl` CLI as the speech engine.
-- Split long Markdown files into chunks before synthesis.
-- Play chunks sequentially inside Obsidian.
-- Show a floating playback controller while reading.
-- Pause, resume, and stop playback.
-- Test the configured local TTS CLI from the settings page or command palette.
-- Keep or automatically delete generated wav files.
-- Open the generated audio output folder.
-- Strip YAML frontmatter.
-- Optionally skip fenced code blocks.
-- Clean common Markdown syntax before narration, including headings, links, embeds, wikilinks, blockquotes, list markers, emphasis, inline code, tables, and file references.
-- Desktop-only by design, because local CLI execution requires the Obsidian desktop runtime.
+[免费下载试用](https://github.com/lornezhang66/open-reader/releases/latest) · [遇到问题，告诉我](https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml)
+
+> 桌面端插件 · 免费开源 · 首次安装本地语音模型约 1.5 GB
 
 ## Local TTS Contract
 
