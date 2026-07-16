@@ -8,6 +8,7 @@ import {
   PluginSettingTab,
   Platform,
   Setting,
+  type SettingDefinitionItem,
   TFile,
 } from "obsidian";
 import * as childProcess from "child_process";
@@ -955,6 +956,117 @@ class OpenReaderSettingTab extends PluginSettingTab {
     this.plugin = plugin;
   }
 
+  getSettingDefinitions(): SettingDefinitionItem[] {
+    return [
+      {
+        type: "group",
+        heading: "TTS 服务 · TTS service",
+        items: [
+          {
+            name: "本地语音引擎 · local speech engine",
+            desc: "检测或安装本机 Local TTS。 · Detect or install Local TTS on this computer.",
+            render: (setting) => {
+              setting
+                .addButton((button) =>
+                  button
+                    .setButtonText(this.plugin.detectTtsctlPath() ? "重新检测 · detect" : "一键安装 · install")
+                    .onClick(async () => {
+                      if (!this.plugin.detectTtsctlPath()) await this.plugin.installLocalTts();
+                    }),
+                )
+                .addButton((button) =>
+                  button.setButtonText("项目说明 · docs").onClick(() => {
+                    window.open("https://github.com/lornezhang66/local-tts-service#cli");
+                  }),
+                );
+            },
+          },
+          {
+            name: "语速 · speech speed",
+            desc: "范围 0.5 到 2，推荐 0.8–1.2。 · Range: 0.5–2; recommended: 0.8–1.2.",
+            control: { type: "slider", key: "speed", min: 0.5, max: 2, step: 0.05 },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: "文本处理 · text processing",
+        items: [
+          {
+            name: "输出文件夹 · output folder",
+            desc: "相对于 vault 根目录的音频目录。 · Vault-relative folder for generated audio.",
+            control: { type: "text", key: "outputFolder", placeholder: DEFAULT_SETTINGS.outputFolder },
+          },
+          {
+            name: "分段字符数 · max chunk characters",
+            desc: "长文档分段上限，推荐 300–600。 · Maximum characters per chunk; recommended: 300–600.",
+            control: { type: "number", key: "maxChunkCharacters", min: 80, max: 4000, step: 1 },
+          },
+          {
+            name: "移除 YAML 前置元数据 · strip YAML frontmatter",
+            control: { type: "toggle", key: "stripFrontmatter" },
+          },
+          {
+            name: "跳过非文本代码块 · skip non-text code blocks",
+            control: { type: "toggle", key: "skipCodeBlocks" },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: "文本过滤 · text filtering",
+        items: [
+          {
+            name: "过滤 HTML 标签 · remove HTML tags",
+            control: { type: "toggle", key: "filterHtmlTags" },
+          },
+          {
+            name: "过滤多余空白 · remove extra whitespace",
+            control: { type: "toggle", key: "filterExtraWhitespace" },
+          },
+          {
+            name: "自定义过滤字符 · custom characters",
+            control: { type: "text", key: "customCharsToFilter", placeholder: "例如 · e.g. #$%^&" },
+          },
+        ],
+      },
+      {
+        type: "group",
+        heading: "其他 · other",
+        items: [
+          {
+            name: "保留音频文件 · keep generated audio",
+            control: { type: "toggle", key: "keepAudioFiles" },
+          },
+          {
+            name: "朗读完成后打开文件夹 · open folder when finished",
+            control: { type: "toggle", key: "openFolderAfterSynthesis" },
+          },
+          {
+            name: "测试 TTS · test TTS",
+            render: (setting) => {
+              setting.addButton((button) =>
+                button.setButtonText("测试 · test").onClick(() => {
+                  void this.plugin.testLocalTtsCli();
+                }),
+              );
+            },
+          },
+          {
+            name: "打开输出文件夹 · open output folder",
+            render: (setting) => {
+              setting.addButton((button) =>
+                button.setButtonText("打开 · open").onClick(() => {
+                  void this.plugin.openOutputFolder();
+                }),
+              );
+            },
+          },
+        ],
+      },
+    ];
+  }
+
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
@@ -977,7 +1089,6 @@ class OpenReaderSettingTab extends PluginSettingTab {
           .setButtonText(this.plugin.detectTtsctlPath() ? "重新检测 · Detect" : "一键安装 · Install")
           .onClick(async () => {
             if (!this.plugin.detectTtsctlPath()) await this.plugin.installLocalTts();
-            this.display();
           }),
       )
       .addButton((button) =>
@@ -994,7 +1105,6 @@ class OpenReaderSettingTab extends PluginSettingTab {
       .addSlider((slider) =>
         slider
           .setLimits(0.5, 2, 0.05)
-          .setDynamicTooltip()
           .setValue(this.plugin.settings.speed)
           .onChange(async (value) => {
             this.plugin.settings.speed = clampNumber(value, 0.5, 2);

@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.6 - 2026-07-16
+
+- Reapplied the review-warning changes on top of 1.1.5 as a forward-only release.
+- Added searchable declarative settings for Obsidian 1.13+ while keeping the existing settings UI for older versions.
+- Removed deprecated slider API usage and unsupported extended system font declarations.
+- Documented the filesystem and shell execution required by the Local TTS architecture.
+
 ## 1.1.5 - 2026-07-16
 
 - Reverted the ineffective 1.1.4 review-warning changes.
