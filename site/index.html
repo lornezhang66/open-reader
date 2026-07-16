@@ -4,88 +4,152 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="Open Reader：免费、中文友好的 Obsidian 本地朗读插件。Free, private, offline text-to-speech for Obsidian.">
-  <title>Open Reader｜让耳朵接着读 · Let your ears keep reading</title>
+  <title>Open Reader — 让耳朵接着读</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <nav>
-    <a class="brand" href="#">Open Reader</a>
-    <div>
-      <a href="https://github.com/lornezhang66/open-reader">源码 · Source</a>
-      <a href="https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml">反馈 · Feedback</a>
+    <a class="brand" href="#" aria-label="Open Reader 首页">
+      <span class="brand-mark">OR</span>
+      <span>Open Reader</span>
+    </a>
+    <div class="nav-actions">
+      <a href="#listen" data-zh="试听" data-en="Listen">试听</a>
+      <a href="https://github.com/lornezhang66/open-reader">GitHub</a>
+      <button class="language" type="button" aria-label="Switch language">EN</button>
     </div>
   </nav>
 
   <main>
     <section class="hero">
-      <p class="kicker">Open Reader for Obsidian</p>
-      <h1>读不进去的时候，<br>让耳朵接着读。<br><small>When reading gets hard, let your ears continue.</small></h1>
-      <p class="intro">免费的本地中文朗读插件。无需 API Key，不按字数付费，笔记不会上传云端。<br>Free, private, offline text-to-speech for Obsidian. No API key or usage limits.</p>
-      <p class="adhd">为 ADHD 和容易阅读走神的人而做。 · Made for ADHD and wandering attention.</p>
-      <div class="actions">
-        <a class="button" href="https://github.com/lornezhang66/open-reader/releases/latest">免费下载 · Free download</a>
-        <a class="more" href="https://github.com/lornezhang66/open-reader">进一步了解 · Learn more <span>›</span></a>
+      <div class="hero-copy">
+        <p class="eyebrow" data-zh="为 Obsidian 而做的本地朗读插件" data-en="Local text-to-speech for Obsidian">为 Obsidian 而做的本地朗读插件</p>
+        <h1 data-zh="眼睛累了，<br><em>换耳朵读。</em>" data-en="When your eyes drift,<br><em>keep reading by ear.</em>">眼睛累了，<br><em>换耳朵读。</em></h1>
+        <p class="hero-intro" data-zh="选中文字，或者打开整篇笔记。Open Reader 会过滤 Markdown，用自然的本地中文声音继续读给你听。" data-en="Select a passage or open an entire note. Open Reader filters out Markdown and reads the real content aloud, entirely on your device.">选中文字，或者打开整篇笔记。Open Reader 会过滤 Markdown，用自然的本地中文声音继续读给你听。</p>
+        <div class="actions">
+          <a class="button primary" href="https://github.com/lornezhang66/open-reader/releases/latest">
+            <span data-zh="免费下载" data-en="Free download">免费下载</span>
+            <small>macOS + Windows</small>
+          </a>
+          <a class="button secondary" href="#listen" data-zh="先听声音" data-en="Hear the voice">先听声音</a>
+        </div>
+        <ul class="trust">
+          <li data-zh="免费开源" data-en="Free & open source">免费开源</li>
+          <li data-zh="无需 API Key" data-en="No API key">无需 API Key</li>
+          <li data-zh="笔记不上传" data-en="Notes stay private">笔记不上传</li>
+        </ul>
+      </div>
+
+      <div class="hero-visual" aria-label="Open Reader 播放界面示意">
+        <div class="glow"></div>
+        <div class="note">
+          <div class="note-bar">
+            <span class="traffic">● ● ●</span>
+            <span>深度阅读.md</span>
+            <span>•••</span>
+          </div>
+          <div class="note-body">
+            <p class="note-path">个人笔记 / 思考</p>
+            <h2 data-zh="注意力不是意志力" data-en="Attention is not willpower">注意力不是意志力</h2>
+            <p data-zh="有时眼睛停留在文字上，大脑却已经离开。换一种输入方式，内容可能重新变得清晰。" data-en="Sometimes your eyes stay on the page while your mind has already left. A different form of input can bring the meaning back into focus.">有时眼睛停留在文字上，大脑却已经离开。换一种输入方式，内容可能重新变得清晰。</p>
+            <p class="active-line" data-zh="当文字读不进去时，让耳朵接着完成这次阅读。" data-en="When the words stop going in, let your ears carry the reading forward.">当文字读不进去时，让耳朵接着完成这次阅读。</p>
+            <p data-zh="Open Reader 跳过格式，只朗读真正的内容。" data-en="Open Reader skips the formatting and reads only what matters.">Open Reader 跳过格式，只朗读真正的内容。</p>
+          </div>
+        </div>
+        <div class="player">
+          <div class="playing">
+            <i></i><i></i><i></i><i></i>
+          </div>
+          <button type="button" aria-label="Pause">Ⅱ</button>
+          <div class="track"><span></span></div>
+          <strong>03:18</strong>
+          <span class="speed">1.0×</span>
+        </div>
       </div>
     </section>
 
-    <section class="product" aria-label="Open Reader 产品界面示意">
-      <div class="window">
-        <header>
-          <span class="dots">● ● ●</span>
-          <span>Obsidian</span>
-          <span></span>
-        </header>
-        <article>
-          <small>我的笔记 / 深度阅读.md</small>
-          <h2>注意力不是意志力</h2>
-          <p>有时眼睛停留在文字上，大脑却已经离开。换一种输入方式，内容可能重新变得清晰。</p>
-          <p class="reading">当文字读不进去时，让耳朵接着完成这次阅读。</p>
-          <p>Open Reader 会跳过 Markdown 符号、链接和代码，只朗读真正的内容。</p>
-        </article>
-        <div class="player">
-          <button aria-label="上一段">‹</button>
-          <button class="pause" aria-label="暂停">Ⅱ</button>
-          <button aria-label="下一段">›</button>
-          <div class="timeline"><i></i></div>
-          <span>1.0×</span>
-        </div>
-      </div>
+    <section class="benefits" aria-label="Product benefits">
+      <article>
+        <span class="benefit-number">01</span>
+        <h3 data-zh="真的本地" data-en="Actually local">真的本地</h3>
+        <p data-zh="语音在你的电脑上生成。没有云端服务，也没有隐私条款里的小字。" data-en="Speech is generated on your computer. No cloud service and no privacy fine print.">语音在你的电脑上生成。没有云端服务，也没有隐私条款里的小字。</p>
+      </article>
+      <article>
+        <span class="benefit-number">02</span>
+        <h3 data-zh="懂 Markdown" data-en="Markdown-aware">懂 Markdown</h3>
+        <p data-zh="自动跳过链接、元数据、代码和格式符号，只留下值得听的正文。" data-en="Links, metadata, code, and formatting syntax are skipped automatically.">自动跳过链接、元数据、代码和格式符号，只留下值得听的正文。</p>
+      </article>
+      <article>
+        <span class="benefit-number">03</span>
+        <h3 data-zh="没有账单" data-en="No meter running">没有账单</h3>
+        <p data-zh="不按字数计费，没有订阅，也不用准备 API Key。" data-en="No per-character billing, subscription, or API key to manage.">不按字数计费，没有订阅，也不用准备 API Key。</p>
+      </article>
     </section>
 
     <section class="listen" id="listen">
-      <p class="kicker">真实声音对比 · Voice comparison</p>
-      <h2>先听，再决定。 · Listen before you decide.</h2>
-      <p class="listen-intro">同一段文字、接近的语速，仅统一播放响度，不改变音色。请戴上耳机分别试听。<br>The same text at a similar speed, with playback volume normalized only. Headphones recommended.</p>
-      <div class="samples">
-        <div class="sample">
-          <span>macOS 系统语音 · System voice</span>
-          <strong>标准中文声音 · Standard Chinese voice</strong>
-          <audio controls preload="metadata" src="audio/system-voice.mp3">你的浏览器不支持音频播放。Your browser does not support audio.</audio>
-        </div>
-        <div class="sample featured">
-          <span>Open Reader</span>
-          <strong>本地 Matcha 中文模型 · Local Matcha model</strong>
-          <audio controls preload="metadata" src="audio/open-reader.mp3">你的浏览器不支持音频播放。Your browser does not support audio.</audio>
-        </div>
+      <div class="section-heading">
+        <p class="eyebrow" data-zh="不要相信文案，相信耳朵" data-en="Don't trust the copy. Trust your ears.">不要相信文案，相信耳朵</p>
+        <h2 data-zh="同一句话，<br>你来选声音。" data-en="The same words.<br>You choose the voice.">同一句话，<br>你来选声音。</h2>
+        <p data-zh="同一段文本、接近的语速，仅统一播放响度。戴上耳机，分别试听。" data-en="The same text at a similar speed, with playback volume normalized only. Headphones recommended.">同一段文本、接近的语速，仅统一播放响度。戴上耳机，分别试听。</p>
       </div>
-      <p class="transcript">试听文本 · Sample: 注意力不是意志力。当文字读不进去时，让耳朵接着读。Open Reader，让 Obsidian 笔记在本地开口说话。</p>
-    </section>
-
-    <section class="facts">
-      <div><strong>免费 · Free</strong><span>没有订阅和调用额度<br>No subscription or usage limits</span></div>
-      <div><strong>中文友好 · Chinese-friendly</strong><span>支持中文与中英混读<br>Chinese and mixed Chinese-English</span></div>
-      <div><strong>完全本地 · Fully local</strong><span>不需要云端 TTS<br>No cloud TTS required</span></div>
+      <div class="samples">
+        <article class="sample">
+          <div>
+            <span class="sample-label">macOS</span>
+            <h3 data-zh="系统中文语音" data-en="System Chinese voice">系统中文语音</h3>
+            <p data-zh="你的电脑已经有的声音" data-en="The voice already on your Mac">你的电脑已经有的声音</p>
+          </div>
+          <audio controls preload="metadata" src="audio/system-voice.mp3">Your browser does not support audio.</audio>
+        </article>
+        <article class="sample featured">
+          <div>
+            <span class="sample-label">Open Reader</span>
+            <h3 data-zh="本地 Matcha 模型" data-en="Local Matcha model">本地 Matcha 模型</h3>
+            <p data-zh="中文友好，也能中英混读" data-en="Made for Chinese and mixed-language notes">中文友好，也能中英混读</p>
+          </div>
+          <audio controls preload="metadata" src="audio/open-reader.mp3">Your browser does not support audio.</audio>
+        </article>
+      </div>
+      <p class="transcript" data-zh="试听文本：注意力不是意志力。当文字读不进去时，让耳朵接着读。Open Reader，让 Obsidian 笔记在本地开口说话。" data-en="Sample text: Attention is not willpower. When reading gets hard, let your ears continue. Open Reader gives your Obsidian notes a private, local voice.">试听文本：注意力不是意志力。当文字读不进去时，让耳朵接着读。Open Reader，让 Obsidian 笔记在本地开口说话。</p>
     </section>
 
     <section class="story">
-      <p>“我有 ADHD。长时间盯着文字很容易失去注意力，但听觉能帮我重新进入内容。这就是我做 Open Reader 的原因。”<br>“I have ADHD. Reading for a long time makes it easy to lose focus, but listening helps me reconnect with the content. That is why I built Open Reader.”</p>
-      <span>— Open Reader 作者 · Creator</span>
+      <div class="quote-mark">“</div>
+      <blockquote data-zh="我有 ADHD。眼睛经常读着读着就掉线，但听觉能把我重新拉回内容里。所以我做了 Open Reader。" data-en="I have ADHD. My eyes often lose the thread while reading, but listening pulls me back into the content. So I built Open Reader.">我有 ADHD。眼睛经常读着读着就掉线，但听觉能把我重新拉回内容里。所以我做了 Open Reader。</blockquote>
+      <p data-zh="— Open Reader 作者" data-en="— Creator of Open Reader">— Open Reader 作者</p>
+    </section>
+
+    <section class="closing">
+      <div>
+        <p class="eyebrow">Open Reader for Obsidian</p>
+        <h2 data-zh="下一篇读不进去的笔记，<br>交给耳朵。" data-en="Give your next difficult note<br>to your ears.">下一篇读不进去的笔记，<br>交给耳朵。</h2>
+      </div>
+      <a class="button primary" href="https://github.com/lornezhang66/open-reader/releases/latest">
+        <span data-zh="免费下载" data-en="Free download">免费下载</span>
+        <small data-zh="首次模型下载约 130 MB" data-en="Initial model download: ~130 MB">首次模型下载约 130 MB</small>
+      </a>
     </section>
   </main>
 
   <footer>
-    <span>目前仅支持桌面端 · Desktop only · 首次模型下载约 130 MB · Initial model download: about 130 MB</span>
-    <a href="https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml">报告问题 · Report an issue</a>
+    <span>Open Reader · Free & open source</span>
+    <div>
+      <span data-zh="目前仅支持桌面端" data-en="Desktop only for now">目前仅支持桌面端</span>
+      <a href="https://github.com/lornezhang66/open-reader/issues/new?template=bug_report.yml" data-zh="报告问题 ↗" data-en="Report an issue ↗">报告问题 ↗</a>
+    </div>
   </footer>
+
+  <script>
+    const languageButton = document.querySelector(".language");
+    languageButton.addEventListener("click", () => {
+      const next = document.documentElement.lang === "zh-CN" ? "en" : "zh-CN";
+      document.documentElement.lang = next;
+      document.querySelectorAll("[data-zh]").forEach((element) => {
+        element.innerHTML = element.dataset[next === "en" ? "en" : "zh"];
+      });
+      languageButton.textContent = next === "en" ? "中" : "EN";
+      document.title = next === "en" ? "Open Reader — Keep reading by ear" : "Open Reader — 让耳朵接着读";
+    });
+  </script>
 </body>
 </html>
