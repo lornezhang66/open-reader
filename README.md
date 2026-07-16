@@ -95,3 +95,9 @@ The production build writes `main.js` in the repository root.
 文字只发送到本机 Local TTS。插件不会调用云端 TTS API、保存 API Key，也不需要联网合成语音。
 
 Text is sent only to Local TTS on your computer. The plugin does not call cloud TTS APIs, store API keys, or require network access for synthesis.
+
+### 权限披露 · Permission disclosure
+
+Open Reader 使用 Node.js `fs` 在当前 vault 的配置输出目录中读写和删除生成的 WAV 文件。它使用 `child_process` 调用固定位置的 `ttsctl.sh` / `ttsctl.ps1`，用于安装 Local TTS、按需启动独立的本机 daemon，并在 HTTP 不可用时执行兼容回退。
+
+Open Reader uses Node.js `fs` to manage generated WAV files in the configured output folder inside the current vault. It uses `child_process` to invoke the fixed-location `ttsctl.sh` / `ttsctl.ps1` for Local TTS installation, on-demand startup of the independent local daemon, and CLI fallback when HTTP is unavailable.
