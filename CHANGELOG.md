@@ -1,11 +1,5 @@
 # Changelog
 
-## 1.1.4 - 2026-07-16
-
-- Added searchable declarative settings for Obsidian 1.13+ while keeping the existing settings UI for older versions.
-- Removed deprecated slider API usage and unsupported extended system font declarations.
-- Documented the filesystem and shell execution required by the Local TTS architecture.
-
 ## 1.1.3 - 2026-07-16
 
 - Added bilingual Chinese-English copy to the website, README, and plugin settings.
